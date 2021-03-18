@@ -84,6 +84,19 @@ public:
     Client &operator=(const Client &) = delete;
     Client &operator=(Client &&) = delete;
 
+    // basic properties
+    Utils::Id id() const { return m_id; }
+    void setName(const QString &name) { m_displayName = name; }
+    QString name() const;
+    void sendContent(const LanguageServerProtocol::IContent &content);
+    void cancelRequest(const LanguageServerProtocol::MessageId &id);
+
+    // server state handling
+    void start();
+    void setInitializationOptions(const QJsonObject& initializationOptions);
+    void initialize();
+    bool reset();
+    void shutdown();
     enum State {
         Uninitialized,
         InitializeRequested,
@@ -92,13 +105,20 @@ public:
         Shutdown,
         Error
     };
-
-    void initialize();
-    void shutdown();
     State state() const;
     bool reachable() const { return m_state == Initialized; }
 
+    // capabilities
+    const LanguageServerProtocol::ServerCapabilities &capabilities() const;
+    const DynamicCapabilities &dynamicCapabilities() const;
+    void registerCapabilities(const QList<LanguageServerProtocol::Registration> &registrations);
+    void unregisterCapabilities(const QList<LanguageServerProtocol::Unregistration> &unregistrations);
+
     // document synchronization
+    void setSupportedLanguage(const LanguageFilter &filter);
+    bool isSupportedDocument(const TextEditor::TextDocument *document) const;
+    bool isSupportedFile(const Utils::FilePath &filePath, const QString &mimeType) const;
+    bool isSupportedUri(const LanguageServerProtocol::DocumentUri &uri) const;
     void openDocument(TextEditor::TextDocument *document);
     void closeDocument(TextEditor::TextDocument *document);
     void activateDocument(TextEditor::TextDocument *document);
@@ -110,71 +130,42 @@ public:
                                  int position,
                                  int charsRemoved,
                                  int charsAdded);
-    void registerCapabilities(const QList<LanguageServerProtocol::Registration> &registrations);
-    void unregisterCapabilities(const QList<LanguageServerProtocol::Unregistration> &unregistrations);
     void cursorPositionChanged(TextEditor::TextEditorWidget *widget);
+    bool documentUpdatePostponed(const Utils::FilePath &fileName) const;
 
-    SymbolSupport &symbolSupport();
+    // workspace control
+    virtual void setCurrentProject(ProjectExplorer::Project *project);
+    const ProjectExplorer::Project *project() const;
+    virtual void projectOpened(ProjectExplorer::Project *project);
+    virtual void projectClosed(ProjectExplorer::Project *project);
 
+    // commands
     void requestCodeActions(const LanguageServerProtocol::DocumentUri &uri,
                             const QList<LanguageServerProtocol::Diagnostic> &diagnostics);
     void requestCodeActions(const LanguageServerProtocol::CodeActionRequest &request);
     void handleCodeActionResponse(const LanguageServerProtocol::CodeActionRequest::Response &response,
                                   const LanguageServerProtocol::DocumentUri &uri);
-    void executeCommand(const LanguageServerProtocol::Command &command);
+    virtual void executeCommand(const LanguageServerProtocol::Command &command);
 
-    void formatFile(const TextEditor::TextDocument *document);
-    void formatRange(const TextEditor::TextDocument *document, const QTextCursor &cursor);
-
-    // workspace control
-    void setCurrentProject(ProjectExplorer::Project *project);
-    const ProjectExplorer::Project *project() const;
-    void projectOpened(ProjectExplorer::Project *project);
-    void projectClosed(ProjectExplorer::Project *project);
-    void projectFileListChanged();
-
-    void sendContent(const LanguageServerProtocol::IContent &content);
-    void cancelRequest(const LanguageServerProtocol::MessageId &id);
-
-    void setSupportedLanguage(const LanguageFilter &filter);
-    void setInitializationOptions(const QJsonObject& initializationOptions);
-    bool isSupportedDocument(const TextEditor::TextDocument *document) const;
-    bool isSupportedFile(const Utils::FilePath &filePath, const QString &mimeType) const;
-    bool isSupportedUri(const LanguageServerProtocol::DocumentUri &uri) const;
-
+    // language support
     void addAssistProcessor(TextEditor::IAssistProcessor *processor);
     void removeAssistProcessor(TextEditor::IAssistProcessor *processor);
-
-    void setName(const QString &name) { m_displayName = name; }
-    QString name() const { return m_displayName; }
-
-    Utils::Id id() const { return m_id; }
-
-    QList<LanguageServerProtocol::Diagnostic> diagnosticsAt(
-        const LanguageServerProtocol::DocumentUri &uri,
-        const LanguageServerProtocol::Range &range) const;
-
-    bool start();
-    bool reset();
-
-    void log(const QString &message);
-    template<typename Error>
-    void log(const LanguageServerProtocol::ResponseError<Error> &responseError)
-    {
-        log(responseError.toString());
-    }
-
-    const LanguageServerProtocol::ServerCapabilities &capabilities() const;
-    const DynamicCapabilities &dynamicCapabilities() const;
-    const BaseClientInterface *clientInterface() const;
+    SymbolSupport &symbolSupport();
     DocumentSymbolCache *documentSymbolCache();
     HoverHandler *hoverHandler();
-    void rehighlight();
+    QList<LanguageServerProtocol::Diagnostic> diagnosticsAt(
+        const LanguageServerProtocol::DocumentUri &uri,
+        const QTextCursor &cursor) const;
 
-    bool documentUpdatePostponed(const Utils::FilePath &fileName) const;
+    // logging
+    void log(const QString &message) const;
+    template<typename Error>
+    void log(const LanguageServerProtocol::ResponseError<Error> &responseError) const
+    { log(responseError.toString()); }
 
 signals:
-    void initialized(LanguageServerProtocol::ServerCapabilities capabilities);
+    void initialized(const LanguageServerProtocol::ServerCapabilities &capabilities);
+    void capabilitiesChanged(const DynamicCapabilities &capabilities);
     void documentUpdated(TextEditor::TextDocument *document);
     void finished();
 
@@ -205,6 +196,8 @@ private:
 
     void updateCompletionProvider(TextEditor::TextDocument *document);
     void updateFunctionHintProvider(TextEditor::TextDocument *document);
+
+    void rehighlight();
 
     using ContentHandler = std::function<void(const QByteArray &, QTextCodec *, QString &,
                                               LanguageServerProtocol::ResponseHandlers,

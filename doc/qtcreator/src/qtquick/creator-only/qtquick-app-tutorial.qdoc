@@ -195,8 +195,8 @@
 
     \list
         \li \l{Creating Components}
-        \li \l{Managing Item Hierarchy}
-        \li \l{Specifying Item Properties}
+        \li \l{Navigator}
+        \li \l{Specifying Component Properties}
     \endlist
 
     Next, we will make the image move between the rectangles when users click
@@ -248,7 +248,7 @@
 
     \list
         \li \l{Adding States}
-        \li \l{Connecting Objects to Signals}
+        \li \l{Connecting Components to Signals}
     \endlist
 
     \section1 Animating Transitions

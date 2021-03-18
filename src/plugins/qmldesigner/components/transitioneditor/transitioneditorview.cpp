@@ -110,7 +110,7 @@ void TransitionEditorView::nodeReparented(const ModelNode &node,
 
     const ModelNode parent = newPropertyParent.parentModelNode();
 
-    qDebug() << Q_FUNC_INFO << parent;
+    // qDebug() << Q_FUNC_INFO << parent;
     if (parent.isValid() && parent.metaInfo().isValid()
         && parent.metaInfo().isSubclassOf("QtQuick.Transition")) {
         asyncUpdate(parent);
@@ -220,8 +220,8 @@ ModelNode TransitionEditorView::addNewTransition()
         for (const QmlPropertyChanges & change : state.propertyChanges()) {
             QStringList locList;
             const ModelNode target = change.target();
-            const QString targetId = target.id();
             if (target.isValid() && target.hasMetaInfo()) {
+                const QString targetId = target.id();
                 for (const VariantProperty &property : change.modelNode().variantProperties()) {
                     TypeName typeName = target.metaInfo().propertyTypeName(property.name());
 

@@ -56,9 +56,9 @@ ClangCurrentDocumentFilter::ClangCurrentDocumentFilter()
 {
     setId(CppTools::Constants::CURRENT_DOCUMENT_FILTER_ID);
     setDisplayName(CppTools::Constants::CURRENT_DOCUMENT_FILTER_DISPLAY_NAME);
-    setShortcutString(QString(QLatin1Char('.')));
+    setDefaultShortcutString(".");
     setPriority(High);
-    setIncludedByDefault(false);
+    setDefaultIncludedByDefault(false);
 
     Core::EditorManager *editorManager = Core::EditorManager::instance();
     connect(editorManager, &Core::EditorManager::currentEditorChanged,
@@ -143,10 +143,6 @@ void ClangCurrentDocumentFilter::accept(Core::LocatorFilterEntry selection,
     auto lineColumn = qvariant_cast<LineColumn>(selection.internalData);
     Core::EditorManager::openEditorAt(m_currentPath, lineColumn.line,
                                       lineColumn.column - 1);
-}
-
-void ClangCurrentDocumentFilter::refresh(QFutureInterface<void> &)
-{
 }
 
 void ClangCurrentDocumentFilter::reset(Core::IEditor *newCurrent, const QString &path)

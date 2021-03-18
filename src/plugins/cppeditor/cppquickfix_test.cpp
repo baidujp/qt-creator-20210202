@@ -409,6 +409,32 @@ void CppEditorPlugin::test_quickfix_data()
         "}\n"
     );
 
+    // Same as above with the cursor somewhere in the body.
+    QTest::newRow("CompleteSwitchCaseStatement_basic1_enum class, cursor in the body")
+        << CppQuickFixFactoryPtr(new CompleteSwitchCaseStatement) << _(
+        "enum class EnumType { V1, V2 };\n"
+        "\n"
+        "void f()\n"
+        "{\n"
+        "    EnumType t;\n"
+        "    switch (t) {\n"
+        "    @}\n"
+        "}\n"
+        ) << _(
+        "enum class EnumType { V1, V2 };\n"
+        "\n"
+        "void f()\n"
+        "{\n"
+        "    EnumType t;\n"
+        "    switch (t) {\n"
+        "    case EnumType::V1:\n"
+        "        break;\n"
+        "    case EnumType::V2:\n"
+        "        break;\n"
+        "    }\n"
+        "}\n"
+    );
+
     // Checks: All enum values are added as case statements for a blank switch when
     //         the variable is declared alongside the enum definition.
     QTest::newRow("CompleteSwitchCaseStatement_basic1_enum_with_declaration")
@@ -3506,10 +3532,7 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "    Q_PROPERTY(int it READ getIt WRITE setIt RESET resetIt NOTIFY itChanged)\n"
              "\n"
              "public:\n"
-             "    int getIt() const\n"
-             "    {\n"
-             "        return m_it;\n"
-             "    }\n"
+             "    int getIt() const;\n"
              "\n"
              "public slots:\n"
              "    void setIt(int it)\n"
@@ -3529,7 +3552,12 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "\n"
              "private:\n"
              "    int m_it;\n"
-             "};\n");
+             "};\n"
+             "\n"
+             "int XmarksTheSpot::getIt() const\n"
+             "{\n"
+             "    return m_it;\n"
+             "}\n");
 
     QTest::newRow("InsertQtPropertyMembersResetWithoutSet")
         << _("struct XmarksTheSpot {\n"
@@ -3539,10 +3567,7 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "    Q_PROPERTY(int it READ getIt RESET resetIt NOTIFY itChanged)\n"
              "\n"
              "public:\n"
-             "    int getIt() const\n"
-             "    {\n"
-             "        return m_it;\n"
-             "    }\n"
+             "    int getIt() const;\n"
              "\n"
              "public slots:\n"
              "    void resetIt()\n"
@@ -3560,7 +3585,12 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "\n"
              "private:\n"
              "    int m_it;\n"
-             "};\n");
+             "};\n"
+             "\n"
+             "int XmarksTheSpot::getIt() const\n"
+             "{\n"
+             "    return m_it;\n"
+             "}\n");
 
     QTest::newRow("InsertQtPropertyMembersResetWithoutSetAndNotify")
         << _("struct XmarksTheSpot {\n"
@@ -3570,10 +3600,7 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "    Q_PROPERTY(int it READ getIt RESET resetIt)\n"
              "\n"
              "public:\n"
-             "    int getIt() const\n"
-             "    {\n"
-             "        return m_it;\n"
-             "    }\n"
+             "    int getIt() const;\n"
              "\n"
              "public slots:\n"
              "    void resetIt()\n"
@@ -3585,7 +3612,12 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "\n"
              "private:\n"
              "    int m_it;\n"
-             "};\n");
+             "};\n"
+             "\n"
+             "int XmarksTheSpot::getIt() const\n"
+             "{\n"
+             "    return m_it;\n"
+             "}\n");
 
     QTest::newRow("InsertQtPropertyMembersPrivateBeforePublic")
         << _("class XmarksTheSpot {\n"
@@ -3601,10 +3633,7 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "\n"
              "public:\n"
              "    void find();\n"
-             "    int getIt() const\n"
-             "    {\n"
-             "        return m_it;\n"
-             "    }\n"
+             "    int getIt() const;\n"
              "public slots:\n"
              "    void setIt(int it)\n"
              "    {\n"
@@ -3615,7 +3644,12 @@ void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers_data()
              "    }\n"
              "signals:\n"
              "    void itChanged(int);\n"
-             "};\n");
+             "};\n"
+             "\n"
+             "int XmarksTheSpot::getIt() const\n"
+             "{\n"
+             "    return m_it;\n"
+             "}\n");
 }
 
 void CppEditorPlugin::test_quickfix_InsertQtPropertyMembers()
@@ -4382,6 +4416,32 @@ void func(const N1::S &s)
 )";
     testDocuments << QuickFixTestDocument::create("file.cpp", original, expected);
     QuickFixOperationTest(testDocuments, &factory);
+
+    // No using declarations here, but the code model has one. No idea why.
+    testDocuments.clear();
+    original = R"(
+class B {};
+class D : public B {
+    @D();
+};
+)";
+    expected = original;
+    testDocuments << QuickFixTestDocument::create("file.h", original, expected);
+
+    // Source File
+    original = R"(
+#include "file.h"
+)";
+    expected = R"(
+#include "file.h"
+
+D::D()
+{
+
+}
+)";
+    testDocuments << QuickFixTestDocument::create("file.cpp", original, expected);
+    QuickFixOperationTest(testDocuments, &factory);
 }
 
 /// Find right implementation file. (QTCREATORBUG-10728)
@@ -4533,6 +4593,68 @@ void CppEditorPlugin::test_quickfix_InsertDefFromDecl_notTriggeredForFriendFunc(
     QuickFixOperationTest(singleDocument(contents, ""), &factory);
 }
 
+void CppEditorPlugin::test_quickfix_InsertDefFromDecl_minimalFunctionParameterType()
+{
+    QList<QuickFixTestDocument::Ptr> testDocuments;
+
+    QByteArray original;
+    QByteArray expected;
+
+    // Header File
+    original = R"(
+class C {
+    typedef int A;
+    A @foo(A);
+};
+)";
+    expected = original;
+    testDocuments << QuickFixTestDocument::create("file.h", original, expected);
+
+    // Source File
+    original = R"(
+#include "file.h"
+)";
+    expected = R"(
+#include "file.h"
+
+C::A C::foo(A)
+{
+
+}
+)";
+    testDocuments << QuickFixTestDocument::create("file.cpp", original, expected);
+
+    InsertDefFromDecl factory;
+    QuickFixOperationTest(testDocuments, &factory);
+
+    testDocuments.clear();
+    // Header File
+    original = R"(
+namespace N {
+    struct S;
+    S @foo(const S &s);
+};
+)";
+    expected = original;
+    testDocuments << QuickFixTestDocument::create("file.h", original, expected);
+
+    // Source File
+    original = R"(
+#include "file.h"
+)";
+    expected = R"(
+#include "file.h"
+
+N::S N::foo(const S &s)
+{
+
+}
+)";
+    testDocuments << QuickFixTestDocument::create("file.cpp", original, expected);
+
+    QuickFixOperationTest(testDocuments, &factory);
+}
+
 void CppEditorPlugin::test_quickfix_InsertDefsFromDecls_data()
 {
     QTest::addColumn<QByteArrayList>("headers");
@@ -4681,6 +4803,9 @@ void insertToSectionDeclFromDef(const QByteArray &section, int sectionIndex)
 
     QByteArray original;
     QByteArray expected;
+    QByteArray sectionString = section + ":\n";
+    if (sectionIndex == 4)
+        sectionString.clear();
 
     // Header File
     original =
@@ -4690,7 +4815,7 @@ void insertToSectionDeclFromDef(const QByteArray &section, int sectionIndex)
     expected =
         "class Foo\n"
         "{\n"
-        + section + ":\n" +
+        + sectionString +
         "    Foo();\n"
         "@};\n";
     testDocuments << QuickFixTestDocument::create("file.h", original, expected);
@@ -7850,6 +7975,75 @@ public:
 };
 )--";
     QTest::newRow("default parameters")
+        << header << expected << QByteArray() << QByteArray() << Inside;
+
+    header = R"--(
+struct Bar{
+    Bar(int i);
+};
+class@ Foo : public Bar{
+    int test;
+public:
+};
+)--";
+    expected = R"--(
+struct Bar{
+    Bar(int i);
+};
+class Foo : public Bar{
+    int test;
+public:
+    Foo(int test, int i) : Bar(i),
+        test(test)
+    {}
+};
+)--";
+    QTest::newRow("parent constructor")
+        << header << expected << QByteArray() << QByteArray() << Inside;
+
+    header = R"--(
+struct Bar{
+    Bar(int use_i = 6);
+};
+class@ Foo : public Bar{
+    int test;
+public:
+};
+)--";
+    expected = R"--(
+struct Bar{
+    Bar(int use_i = 6);
+};
+class Foo : public Bar{
+    int test;
+public:
+    Foo(int test, int use_i = 6) : Bar(use_i),
+        test(test)
+    {}
+};
+)--";
+    QTest::newRow("parent constructor with default")
+        << header << expected << QByteArray() << QByteArray() << Inside;
+
+    header = R"--(
+struct Bar{
+    Bar(int use_i = L'A', int use_i2 = u8"B");
+};
+class@ Foo : public Bar{
+public:
+};
+)--";
+    expected = R"--(
+struct Bar{
+    Bar(int use_i = L'A', int use_i2 = u8"B");
+};
+class Foo : public Bar{
+public:
+    Foo(int use_i = L'A', int use_i2 = u8"B") : Bar(use_i, use_i2)
+    {}
+};
+)--";
+    QTest::newRow("parent constructor with char/string default value")
         << header << expected << QByteArray() << QByteArray() << Inside;
 
     const QByteArray common = R"--(

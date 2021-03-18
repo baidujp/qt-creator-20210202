@@ -31,11 +31,7 @@
 
 /*!
     \page quick-buttons.html
-    \if defined(qtdesignstudio)
-    \previouspage quick-2d-effects.html
-    \else
-    \previouspage quick-data-models.html
-    \endif
+    \previouspage quick-animations.html
     \nextpage quick-scalable-image.html
 
     \title Creating Buttons
@@ -131,7 +127,7 @@
 /*!
     \previouspage quick-buttons.html
     \page quick-scalable-image.html
-    \nextpage qtquick-navigator.html
+    \nextpage qtquick-properties.html
 
     \title Creating Scalable Buttons and Borders
 

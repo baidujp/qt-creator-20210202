@@ -575,6 +575,11 @@ void ModelPrivate::notifyModelNodePreviewPixmapChanged(const ModelNode &node, co
         [&](AbstractView *view) { view->modelNodePreviewPixmapChanged(node, pixmap); });
 }
 
+void ModelPrivate::notifyImport3DSupportChanged(const QVariantMap &supportMap)
+{
+    notifyInstanceChanges([&](AbstractView *view) { view->updateImport3DSupport(supportMap); });
+}
+
 void ModelPrivate::notifyRewriterBeginTransaction()
 {
     notifyNodeInstanceViewLast([&](AbstractView *view) { view->rewriterBeginTransaction(); });
@@ -759,6 +764,21 @@ void ModelPrivate::notifyNodeIdChanged(const InternalNodePointer &node,
 {
     notifyNodeInstanceViewLast([&](AbstractView *view) {
         view->nodeIdChanged(ModelNode{node, m_model, view}, newId, oldId);
+    });
+}
+
+void ModelPrivate::notifyBindingPropertiesAboutToBeChanged(
+    const QList<InternalBindingPropertyPointer> &internalPropertyList)
+{
+    notifyNodeInstanceViewLast([&](AbstractView *view) {
+        QList<BindingProperty> propertyList;
+        for (const InternalBindingPropertyPointer &bindingProperty : internalPropertyList) {
+            propertyList.append(BindingProperty(bindingProperty->name(),
+                                                bindingProperty->propertyOwner(),
+                                                m_model,
+                                                view));
+        }
+        view->bindingPropertiesAboutToBeChanged(propertyList);
     });
 }
 
@@ -1025,6 +1045,7 @@ void ModelPrivate::setBindingProperty(const InternalNodePointer &node, const Pro
     }
 
     InternalBindingPropertyPointer bindingProperty = node->bindingProperty(name);
+    notifyBindingPropertiesAboutToBeChanged({bindingProperty});
     bindingProperty->setExpression(expression);
     notifyBindingPropertiesChanged({bindingProperty}, propertyChange);
 }
@@ -1082,6 +1103,7 @@ void ModelPrivate::setDynamicBindingProperty(const InternalNodePointer &node,
     }
 
     InternalBindingPropertyPointer bindingProperty = node->bindingProperty(name);
+    notifyBindingPropertiesAboutToBeChanged({bindingProperty});
     bindingProperty->setDynamicExpression(dynamicPropertyType, expression);
     notifyBindingPropertiesChanged({bindingProperty}, propertyChange);
 }

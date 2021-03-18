@@ -23,6 +23,7 @@
 **
 ****************************************************************************/
 
+#include "conanconstants.h"
 #include "conaninstallstep.h"
 #include "conanplugin.h"
 #include "conansettings.h"
@@ -67,7 +68,8 @@ ConanInstallStep::ConanInstallStep(BuildStepList *bsl, Id id)
 
     auto conanFile = addAspect<StringAspect>();
     conanFile->setSettingsKey("ConanPackageManager.InstallStep.ConanFile");
-    conanFile->setFilePath(project()->projectDirectory() / "conanfile.txt");
+    conanFile->setFilePath(ConanPlugin::conanFilePath(project(),
+                           project()->projectDirectory() / "conanfile.txt"));
     conanFile->setLabelText(tr("Conan file:"));
     conanFile->setToolTip(tr("Enter location of conanfile.txt or conanfile.py."));
     conanFile->setDisplayStyle(StringAspect::PathChooserDisplay);
@@ -82,6 +84,7 @@ ConanInstallStep::ConanInstallStep(BuildStepList *bsl, Id id)
     buildMissing->setSettingsKey("ConanPackageManager.InstallStep.BuildMissing");
     buildMissing->setLabel("Build missing:", BoolAspect::LabelPlacement::InExtraLabel);
     buildMissing->setDefaultValue(true);
+    buildMissing->setValue(true);
 
     setCommandLineProvider([=] {
         BuildConfiguration::BuildType bt = buildConfiguration()->buildType();
@@ -134,7 +137,7 @@ void ConanInstallStep::setupOutputFormatter(OutputFormatter *formatter)
 
 ConanInstallStepFactory::ConanInstallStepFactory()
 {
-    registerStep<ConanInstallStep>("ConanPackageManager.InstallStep");
+    registerStep<ConanInstallStep>(Constants::INSTALL_STEP);
     setDisplayName(ConanInstallStep::tr("Run conan install"));
 }
 

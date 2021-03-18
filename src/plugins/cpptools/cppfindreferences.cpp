@@ -181,15 +181,20 @@ class Filter : public Core::SearchResultFilter
         readsCheckBox->setChecked(m_showReads);
         const auto writesCheckBox = new QCheckBox(tr("Writes"));
         writesCheckBox->setChecked(m_showWrites);
+        const auto declsCheckBox = new QCheckBox(tr("Declarations"));
+        declsCheckBox->setChecked(m_showDecls);
         const auto otherCheckBox = new QCheckBox(tr("Other"));
         otherCheckBox->setChecked(m_showOther);
         layout->addWidget(readsCheckBox);
         layout->addWidget(writesCheckBox);
+        layout->addWidget(declsCheckBox);
         layout->addWidget(otherCheckBox);
         connect(readsCheckBox, &QCheckBox::toggled,
                 this, [this](bool checked) { setValue(m_showReads, checked); });
         connect(writesCheckBox, &QCheckBox::toggled,
                 this, [this](bool checked) { setValue(m_showWrites, checked); });
+        connect(declsCheckBox, &QCheckBox::toggled,
+                this, [this](bool checked) { setValue(m_showDecls, checked); });
         connect(otherCheckBox, &QCheckBox::toggled,
                 this, [this](bool checked) { setValue(m_showOther, checked); });
         return widget;
@@ -197,7 +202,7 @@ class Filter : public Core::SearchResultFilter
 
     bool matches(const SearchResultItem &item) const override
     {
-        switch (static_cast<CPlusPlus::Usage::Type>(item.userData.toInt())) {
+        switch (static_cast<CPlusPlus::Usage::Type>(item.userData().toInt())) {
         case CPlusPlus::Usage::Type::Read:
             return m_showReads;
         case CPlusPlus::Usage::Type::Write:
@@ -205,6 +210,7 @@ class Filter : public Core::SearchResultFilter
             case CPlusPlus::Usage::Type::Initialization:
             return m_showWrites;
         case CPlusPlus::Usage::Type::Declaration:
+            return m_showDecls;
         case CPlusPlus::Usage::Type::Other:
             return m_showOther;
         }
@@ -219,6 +225,7 @@ class Filter : public Core::SearchResultFilter
 
     bool m_showReads = true;
     bool m_showWrites = true;
+    bool m_showDecls = true;
     bool m_showOther = true;
 };
 
@@ -623,9 +630,14 @@ static void displayResults(SearchResult *search, QFutureWatcher<CPlusPlus::Usage
     };
     for (int index = first; index != last; ++index) {
         const CPlusPlus::Usage result = watcher->future().resultAt(index);
-        search->addResult(result.path.toString(), result.line, result.lineText,
-                          result.col, result.len, int(result.type),
-                          colorStyleForUsageType(result.type));
+        SearchResultItem item;
+        item.setFilePath(result.path);
+        item.setMainRange(result.line, result.col, result.len);
+        item.setLineText(result.lineText);
+        item.setUserData(int(result.type));
+        item.setStyle(colorStyleForUsageType(result.type));
+        item.setUseTextEditorFont(true);
+        search->addResult(item);
 
         if (parameters.prettySymbolName.isEmpty())
             continue;
@@ -816,8 +828,12 @@ void CppFindReferences::findMacroUses(const CPlusPlus::Macro &macro, const QStri
         unsigned column;
         const QString line = FindMacroUsesInFile::matchingLine(macro.bytesOffset(), source,
                                                                &column);
-        search->addResult(macro.fileName(), macro.line(), line, column,
-                          macro.nameToQString().length());
+        SearchResultItem item;
+        item.setFilePath(Utils::FilePath::fromString(macro.fileName()));
+        item.setLineText(line);
+        item.setMainRange(macro.line(), column, macro.nameToQString().length());
+        item.setUseTextEditorFont(true);
+        search->addResult(item);
     }
 
     QFuture<CPlusPlus::Usage> result;

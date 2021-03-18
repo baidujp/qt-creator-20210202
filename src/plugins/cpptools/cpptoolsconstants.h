@@ -60,6 +60,7 @@ const char CPPTOOLS_SKIP_INDEXING_BIG_FILES[] = "SkipIndexingBigFiles";
 const char CPPTOOLS_INDEXER_FILE_SIZE_LIMIT[] = "IndexerFileSizeLimit";
 
 const char CPP_CLANG_DIAG_CONFIG_QUESTIONABLE[] = "Builtin.Questionable";
+const char CPP_CLANG_DIAG_CONFIG_BUILDSYSTEM[] = "Builtin.BuildSystem";
 
 const char CPP_CODE_STYLE_SETTINGS_ID[] = "A.Cpp.Code Style";
 const char CPP_CODE_STYLE_SETTINGS_NAME[] = QT_TRANSLATE_NOOP("CppTools", "Code Style");
@@ -89,7 +90,7 @@ const char INCLUDES_FILTER_ID[] = "All Included C/C++ Files";
 const char INCLUDES_FILTER_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("CppTools", "All Included C/C++ Files");
 
 const char LOCATOR_FILTER_ID[] = "Classes and Methods";
-const char LOCATOR_FILTER_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("CppTools", "C++ Classes, Enums and Functions");
+const char LOCATOR_FILTER_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("CppTools", "C++ Classes, Enums, Functions and Type Aliases");
 
 const char SYMBOLS_FIND_FILTER_ID[] = "Symbols";
 const char SYMBOLS_FIND_FILTER_DISPLAY_NAME[] = QT_TRANSLATE_NOOP("CppTools", "C++ Symbols");

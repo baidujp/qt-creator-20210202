@@ -25,6 +25,7 @@
 
 #include "clanghighlightingresultreporter.h"
 
+#include <cpptools/semantichighlighter.h>
 #include <texteditor/textstyles.h>
 #include <utils/qtcassert.h>
 
@@ -114,6 +115,8 @@ bool ignore(ClangBackEnd::HighlightingType type)
     case HighlightingType::TemplateTemplateParameter:
     case HighlightingType::AngleBracketOpen:
     case HighlightingType::AngleBracketClose:
+    case HighlightingType::TernaryIf:
+    case HighlightingType::TernaryElse:
         return true;
     }
 
@@ -143,9 +146,13 @@ TextEditor::HighlightingResult toHighlightingResult(
     TextEditor::HighlightingResult result(tokenInfo.line, tokenInfo.column, tokenInfo.length,
                                           textStyles);
     if (tokenInfo.types.mixinHighlightingTypes.contains(HighlightingType::AngleBracketOpen))
-        result.kind = 1;
+        result.kind = CppTools::SemanticHighlighter::AngleBracketOpen;
     else if (tokenInfo.types.mixinHighlightingTypes.contains(HighlightingType::AngleBracketClose))
-        result.kind = 2;
+        result.kind = CppTools::SemanticHighlighter::AngleBracketClose;
+    else if (tokenInfo.types.mixinHighlightingTypes.contains(HighlightingType::TernaryIf))
+        result.kind = CppTools::SemanticHighlighter::TernaryIf;
+    else if (tokenInfo.types.mixinHighlightingTypes.contains(HighlightingType::TernaryElse))
+        result.kind = CppTools::SemanticHighlighter::TernaryElse;
     return result;
 }
 

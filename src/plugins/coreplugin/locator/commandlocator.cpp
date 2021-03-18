@@ -31,7 +31,6 @@
 #include <utils/stringutils.h>
 
 #include <QAction>
-#include <QTimer>
 
 using namespace Utils;
 
@@ -58,7 +57,7 @@ CommandLocator::CommandLocator(Id id,
 {
     setId(id);
     setDisplayName(displayName);
-    setShortcutString(shortCutString);
+    setDefaultShortcutString(shortCutString);
 }
 
 CommandLocator::~CommandLocator()
@@ -124,14 +123,10 @@ void CommandLocator::accept(LocatorFilterEntry entry,
     QTC_ASSERT(index >= 0 && index < d->commands.size(), return);
     QAction *action = d->commands.at(index)->action();
     // avoid nested stack trace and blocking locator by delayed triggering
-    QTimer::singleShot(0, action, [action] {
+    QMetaObject::invokeMethod(action, [action] {
         if (action->isEnabled())
             action->trigger();
-    });
-}
-
-void CommandLocator::refresh(QFutureInterface<void> &)
-{
+    }, Qt::QueuedConnection);
 }
 
 }  // namespace Core

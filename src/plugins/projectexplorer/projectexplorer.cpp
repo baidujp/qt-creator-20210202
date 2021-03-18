@@ -2798,8 +2798,9 @@ ProjectExplorerPluginPrivate::ProjectExplorerPluginPrivate()
     : m_allProjectDirectoriesFilter("Files in All Project Directories")
 {
     m_allProjectDirectoriesFilter.setDisplayName(m_allProjectDirectoriesFilter.id().toString());
-    m_allProjectDirectoriesFilter.setShortcutString("a");      // shared with "Files in Any Project"
-    m_allProjectDirectoriesFilter.setIncludedByDefault(false); // but not included in default
+    // shared with "Files in Any Project":
+    m_allProjectDirectoriesFilter.setDefaultShortcutString("a");
+    m_allProjectDirectoriesFilter.setDefaultIncludedByDefault(false); // but not included in default
     m_allProjectDirectoriesFilter.setFilters({});
     m_allProjectDirectoriesFilter.setIsCustomFilter(false);
 }
@@ -3544,7 +3545,7 @@ void ProjectExplorerPluginPrivate::addExistingProjects()
         return;
     QStringList failedProjects;
     QStringList addedProjects;
-    for (const QString &filePath : subProjectFilePaths) {
+    for (const QString &filePath : qAsConst(subProjectFilePaths)) {
         if (projectNode->addSubProject(filePath))
             addedProjects << filePath;
         else

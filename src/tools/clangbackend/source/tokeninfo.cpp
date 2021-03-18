@@ -586,12 +586,20 @@ void TokenInfo::punctuationOrOperatorKind()
         case CXCursor_CompoundAssignOperator:
         case CXCursor_ConditionalOperator:
             m_types.mixinHighlightingTypes.push_back(HighlightingType::Operator);
+            if (kind == CXCursor_ConditionalOperator) {
+                if (m_token->spelling() == "?")
+                    m_types.mixinHighlightingTypes.push_back(HighlightingType::TernaryIf);
+                else
+                    m_types.mixinHighlightingTypes.push_back(HighlightingType::TernaryElse);
+            }
             break;
         default:
             break;
     }
 
-    if (m_types.mixinHighlightingTypes.empty() && kind != CXCursor_InclusionDirective) {
+    if (m_types.mixinHighlightingTypes.empty()
+        && kind != CXCursor_InclusionDirective
+        && kind != CXCursor_PreprocessingDirective) {
         const ClangString spelling = m_token->spelling();
         if (spelling == "<")
             m_types.mixinHighlightingTypes.push_back(HighlightingType::AngleBracketOpen);

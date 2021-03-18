@@ -88,6 +88,9 @@
 #include <QUrl>
 #include <QVariant>
 #include <qqmllist.h>
+#include <QFontDatabase>
+#include <QFileInfo>
+#include <QDirIterator>
 
 #include <algorithm>
 
@@ -322,8 +325,9 @@ void NodeInstanceServer::stopRenderTimer()
 
 void NodeInstanceServer::createScene(const CreateSceneCommand &command)
 {
-    setTranslationLanguage(command.language);
     initializeView();
+    registerFonts(command.resourceUrl);
+    setTranslationLanguage(command.language);
 
     Internal::QmlPrivateGate::stopUnifiedTimer();
 
@@ -1336,6 +1340,10 @@ void NodeInstanceServer::loadDummyContextObjectFile(const QFileInfo& qmlFileInfo
 
 void NodeInstanceServer::setTranslationLanguage(const QString &language)
 {
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
+    // if there exists an /i18n directory it sets default translators
+    engine()->setUiLanguage(language);
+#endif
     static QPointer<MultiLanguage::Translator> multilanguageTranslator;
     if (!MultiLanguage::databaseFilePath().isEmpty()) {
         if (!multilanguageLink) {
@@ -1500,6 +1508,15 @@ void NodeInstanceServer::setupState(qint32 stateInstanceId)
         if (activeStateInstance().isValid())
             activeStateInstance().deactivateState();
     }
+}
+
+void NodeInstanceServer::registerFonts(const QUrl &resourceUrl) const
+{
+    // Autoregister all fonts found inside the project
+    QDirIterator it {QFileInfo(resourceUrl.toLocalFile()).absoluteFilePath(),
+                     {"*.ttf", "*.otf"}, QDir::Files, QDirIterator::Subdirectories};
+    while (it.hasNext())
+        QFontDatabase::addApplicationFont(it.next());
 }
 
 } // namespace QmlDesigner

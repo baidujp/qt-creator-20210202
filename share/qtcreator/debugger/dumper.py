@@ -188,6 +188,7 @@ class DumperBase():
         self.displayStringLimit = 100
         self.useTimeStamps = False
 
+        self.output = ''
         self.typesReported = {}
         self.typesToReport = {}
         self.qtNamespaceToReport = None
@@ -942,7 +943,7 @@ class DumperBase():
                                    for (k, v) in list(value.items())]) + '}'
         if isinstance(value, list):
             return '[' + ','.join([self.resultToMi(k)
-                                   for k in list(value.items())]) + ']'
+                                   for k in value]) + ']'
         return '"%s"' % value
 
     def variablesToMi(self, value, prefix):
@@ -1311,6 +1312,11 @@ class DumperBase():
         savedCurrentChildType = self.currentChildType
         self.currentChildType = innerType.name
         derefValue.name = '*'
+        derefValue.autoDerefCount = value.autoDerefCount + 1
+
+        if derefValue.type.code != TypeCode.Pointer:
+            self.putField('autoderefcount', '{}'.format(derefValue.autoDerefCount))
+
         self.putItem(derefValue)
         self.currentChildType = savedCurrentChildType
 
@@ -2919,6 +2925,7 @@ class DumperBase():
             self.targetValue = None  # For references.
             self.isBaseClass = None
             self.nativeValue = None
+            self.autoDerefCount = 0
 
         def copy(self):
             val = self.dumper.Value(self.dumper)

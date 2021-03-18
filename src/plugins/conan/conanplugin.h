@@ -26,6 +26,9 @@
 #pragma once
 
 #include <extensionsystem/iplugin.h>
+#include <utils/fileutils.h>
+
+namespace ProjectExplorer { class Project; }
 
 namespace ConanPackageManager {
 namespace Internal {
@@ -39,9 +42,12 @@ class ConanPlugin final : public ExtensionSystem::IPlugin
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "Conan.json")
 public:
     static ConanSettings *conanSettings();
+    static Utils::FilePath conanFilePath(ProjectExplorer::Project *project,
+                           const Utils::FilePath &defaultFilePath = Utils::FilePath());
 
 private:
     ~ConanPlugin() final;
+    void projectAdded(ProjectExplorer::Project *project);
 
     void extensionsInitialized() final;
     bool initialize(const QStringList &arguments, QString *errorString) final;

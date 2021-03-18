@@ -51,7 +51,7 @@ TestTreeItem *QuickTestParseResult::createTestTreeItem() const
     if (itemType == TestTreeItem::Root || itemType == TestTreeItem::TestDataTag)
         return nullptr;
 
-    QuickTestTreeItem *item = new QuickTestTreeItem(base, name, fileName, itemType);
+    QuickTestTreeItem *item = new QuickTestTreeItem(framework, name, fileName, itemType);
     item->setProFile(proFile);
     item->setLine(line);
     item->setColumn(column);
@@ -163,7 +163,7 @@ QList<Document::Ptr> QuickTestParser::scanDirectoryForQuickTestQmlFiles(const QS
 
     QList<Document::Ptr> foundDocs;
 
-    for (const QString &path : dirs) {
+    for (const QString &path : qAsConst(dirs)) {
         const QList<Document::Ptr> docs = snapshot.documentsInDirectory(path);
         for (const Document::Ptr &doc : docs) {
             const QFileInfo fi(doc->fileName());

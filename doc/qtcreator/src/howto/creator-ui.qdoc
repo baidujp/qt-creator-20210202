@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2020 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Creator documentation.
@@ -99,7 +99,7 @@
 
     \else
     You can use the \l{Selecting Modes}{mode selector} to switch to the
-    \l{Editing QML Files in Design Mode}{Design mode} (1), where you will do
+    \l{Design Views}{Design mode} (1), where you will do
     most of your work and the \l{Using the Help Mode}{Help} (2) mode, where
     you can read the product documentation. The other modes are for more
     advanced use, and you are likely to need them less often.
@@ -312,7 +312,7 @@
             mode for designing and developing application user interfaces.
             This mode is available for UI files.
         \else
-        \li \uicontrol{\l{Editing QML Files in Design Mode}{Design}}
+        \li \uicontrol{\l{Design Views}{Design}}
             mode for designing and developing application user interfaces.
             As a designer, you'll do most of your work in this mode.
         \endif
@@ -410,6 +410,14 @@
 
     For more information about the \uicontrol {QML Debugger Console} view, see
     \l{Executing JavaScript Expressions}.
+
+    If the text in the output panes is not displayed correctly, \QC might
+    be using a different codec from the one used by the tools that generate
+    the output. To specify the codec to use, select \uicontrol Tools >
+    \uicontrol Options > \uicontrol Environment > \uicontrol Interface, and
+    then select the codec in the \uicontrol {Text codec for tools} field.
+
+    \image qtcreator-options-environment-interface.png "Interface tab in the Environment options"
 
     \section1 Finding and Filtering Output
 

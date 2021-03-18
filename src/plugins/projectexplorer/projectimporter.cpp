@@ -38,6 +38,7 @@
 #include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
+#include <utils/environment.h>
 #include <utils/qtcassert.h>
 
 #include <QLoggingCategory>
@@ -396,7 +397,7 @@ static ProjectImporter::ToolChainData createToolChains(const ToolChainDescriptio
         if (data.tcs.isEmpty())
             continue;
 
-        for (ToolChain *tc : data.tcs)
+        for (ToolChain *tc : qAsConst(data.tcs))
             ToolChainManager::registerToolChain(tc);
 
         data.areTemporary = true;
@@ -411,9 +412,11 @@ ProjectImporter::findOrCreateToolChains(const ToolChainDescription &tcd) const
 {
     ToolChainData result;
     result.tcs = ToolChainManager::toolChains([&tcd](const ToolChain *tc) {
-        return tc->language() == tcd.language && tc->compilerCommand() == tcd.compilerPath;
+        return tc->language() == tcd.language &&
+               Utils::Environment::systemEnvironment().isSameExecutable(
+                    tc->compilerCommand().toString(), tcd.compilerPath.toString());
     });
-    for (const ToolChain *tc : result.tcs) {
+    for (const ToolChain *tc : qAsConst(result.tcs)) {
         const QByteArray tcId = tc->id();
         result.areTemporary = result.areTemporary ? true : hasKitWithTemporaryData(ToolChainKitAspect::id(), tcId);
     }

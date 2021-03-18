@@ -134,6 +134,17 @@ void GlobalOrProjectAspect::toMap(QVariantMap &map) const
     map.insert(id().toString() + ".UseGlobalSettings", m_useGlobalSettings);
 }
 
+void GlobalOrProjectAspect::toActiveMap(QVariantMap &data) const
+{
+    if (m_useGlobalSettings)
+        m_globalSettings->toMap(data);
+    else if (m_projectSettings)
+        m_projectSettings->toMap(data);
+    // The debugger accesses the data directly, so this can actually happen.
+    //else
+    //    QTC_CHECK(false);
+}
+
 void GlobalOrProjectAspect::resetProjectToGlobalSettings()
 {
     QTC_ASSERT(m_globalSettings, return);
@@ -235,7 +246,7 @@ QMap<Utils::Id, QVariantMap> RunConfiguration::aspectData() const
 {
     QMap<Utils::Id, QVariantMap> data;
     for (BaseAspect *aspect : qAsConst(m_aspects))
-        aspect->toMap(data[aspect->id()]);
+        aspect->toActiveMap(data[aspect->id()]);
     return data;
 }
 
@@ -429,10 +440,10 @@ QString RunConfigurationFactory::decoratedTargetName(const QString &targetName, 
         if (IDevice::ConstPtr dev = DeviceKitAspect::device(target->kit())) {
             if (displayName.isEmpty()) {
                 //: Shown in Run configuration if no executable is given, %1 is device name
-                displayName = RunConfiguration::tr("Run on %1").arg(dev->displayName());
+                displayName = RunConfiguration::tr("Run on %{Device:Name}");
             } else {
                 //: Shown in Run configuration, Add menu: "name of runnable (on device name)"
-                displayName = RunConfiguration::tr("%1 (on %2)").arg(displayName, dev->displayName());
+                displayName = RunConfiguration::tr("%1 (on %{Device:Name})").arg(displayName);
             }
         }
     }
@@ -556,7 +567,7 @@ RunConfiguration *RunConfigurationCreationInfo::create(Target *target) const
 
 RunConfiguration *RunConfigurationFactory::restore(Target *parent, const QVariantMap &map)
 {
-    for (RunConfigurationFactory *factory : g_runConfigurationFactories) {
+    for (RunConfigurationFactory *factory : qAsConst(g_runConfigurationFactories)) {
         if (factory->canHandle(parent)) {
             const Utils::Id id = idFromMap(map);
             if (id.name().startsWith(factory->m_runConfigurationId.name())) {
@@ -581,7 +592,7 @@ RunConfiguration *RunConfigurationFactory::clone(Target *parent, RunConfiguratio
 const QList<RunConfigurationCreationInfo> RunConfigurationFactory::creatorsForTarget(Target *parent)
 {
     QList<RunConfigurationCreationInfo> items;
-    for (RunConfigurationFactory *factory : g_runConfigurationFactories) {
+    for (RunConfigurationFactory *factory : qAsConst(g_runConfigurationFactories)) {
         if (factory->canHandle(parent))
             items.append(factory->availableCreators(parent));
     }

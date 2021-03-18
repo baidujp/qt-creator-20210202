@@ -102,11 +102,6 @@ QList<Core::LocatorFilterEntry> CMakeTargetLocatorFilter::matchesFor(QFutureInte
     return m_result;
 }
 
-void CMakeTargetLocatorFilter::refresh(QFutureInterface<void> &future)
-{
-    Q_UNUSED(future)
-}
-
 void CMakeTargetLocatorFilter::projectListUpdated()
 {
     // Enable the filter if there's at least one CMake project
@@ -121,7 +116,7 @@ BuildCMakeTargetLocatorFilter::BuildCMakeTargetLocatorFilter()
 {
     setId("Build CMake target");
     setDisplayName(tr("Build CMake target"));
-    setShortcutString("cm");
+    setDefaultShortcutString("cm");
     setPriority(High);
 }
 
@@ -170,7 +165,7 @@ OpenCMakeTargetLocatorFilter::OpenCMakeTargetLocatorFilter()
 {
     setId("Open CMake target definition");
     setDisplayName(tr("Open CMake target"));
-    setShortcutString("cmo");
+    setDefaultShortcutString("cmo");
     setPriority(Medium);
 }
 

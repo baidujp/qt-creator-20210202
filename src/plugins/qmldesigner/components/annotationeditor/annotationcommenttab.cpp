@@ -60,6 +60,7 @@ AnnotationCommentTab::AnnotationCommentTab(QWidget *parent)
     ui->titleEdit->setModel(new QStringListModel{QStringList{"Description",
                                                              "Display Condition",
                                                              "helper lines",
+                                                             "position marker",
                                                              "highlight",
                                                              "project author",
                                                              "project confirmed",
@@ -69,7 +70,11 @@ AnnotationCommentTab::AnnotationCommentTab(QWidget *parent)
                                                              "project type",
                                                              "project version",
                                                              "Screen Description",
-                                                             "Section"}});
+                                                             "Section",
+                                                             "normalcolor",
+                                                             "focuscolor",
+                                                             "selectedcolor",
+                                                             "pressedcolor"}});
 
     connect(ui->titleEdit, &QComboBox::currentTextChanged,
             this, &AnnotationCommentTab::commentTitleChanged);

@@ -86,6 +86,7 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/documentmanager.h>
+#include <hdrimage.h>
 #endif
 
 #include <projectexplorer/target.h>
@@ -1070,6 +1071,12 @@ CreateSceneCommand NodeInstanceView::createCreateSceneCommand()
                               importVector,
                               mockupTypesVector,
                               model()->fileUrl(),
+#ifndef QMLDESIGNER_TEST
+                              QUrl::fromLocalFile(QmlDesigner::DocumentManager::currentResourcePath()
+                                                  .toFileInfo().absoluteFilePath()),
+#else
+                              QUrl::fromLocalFile(QFileInfo(model()->fileUrl().toLocalFile()).absolutePath()),
+#endif
                               m_edit3DToolStates[model()->fileUrl()],
                               lastUsedLanguage,
                               stateInstanceId);
@@ -1571,6 +1578,9 @@ void NodeInstanceView::handlePuppetToCreatorCommand(const PuppetToCreatorCommand
                 updatePreviewImageForNode(node, image);
             }
         }
+    } else if (command.type() == PuppetToCreatorCommand::Import3DSupport) {
+        const QVariantMap supportMap = qvariant_cast<QVariantMap>(command.data());
+        emitImport3DSupportChanged(supportMap);
     }
 }
 
@@ -1723,7 +1733,12 @@ QVariant NodeInstanceView::previewImageDataForImageNode(const ModelNode &modelNo
                     originalPixmap = QPixmap::fromImage(paintImage);
                 }
             } else {
-                originalPixmap.load(imageSource);
+#ifndef QMLDESIGNER_TEST
+                if (imageFi.suffix() == "hdr")
+                    originalPixmap = HdrImage{imageSource}.toPixmap();
+                else
+#endif
+                    originalPixmap.load(imageSource);
             }
             if (!originalPixmap.isNull()) {
                 const int dim = Constants::MODELNODE_PREVIEW_IMAGE_DIMENSIONS * ratio;

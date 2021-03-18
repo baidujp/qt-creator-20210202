@@ -67,6 +67,9 @@
 #include <utils/qtcassert.h>
 #include <utils/treemodel.h>
 
+#ifdef WITH_TESTS
+#include <QAbstractItemModelTester>
+#endif
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -86,6 +89,7 @@
 #include <QRegularExpression>
 #include <QSharedPointer>
 #include <QStack>
+#include <QStyledItemDelegate>
 #include <QTableView>
 #include <QTextCodec>
 #include <QTextCursor>
@@ -136,368 +140,12 @@ QString inlinePrefix(const QString &targetFile, const std::function<bool()> &ext
 // different quick fixes.
 namespace {
 
-class NSVisitor : public ASTVisitor
-{
-public:
-    NSVisitor(const CppRefactoringFile *file, const QStringList &namespaces, int symbolPos)
-        : ASTVisitor(file->cppDocument()->translationUnit()),
-          m_file(file),
-          m_remainingNamespaces(namespaces),
-          m_symbolPos(symbolPos)
-    {}
-
-    const QStringList remainingNamespaces() const { return m_remainingNamespaces; }
-    const NamespaceAST *firstNamespace() const { return m_firstNamespace; }
-    const AST *firstToken() const { return m_firstToken; }
-    const NamespaceAST *enclosingNamespace() const { return m_enclosingNamespace; }
-
-private:
-    bool preVisit(AST *ast) override
-    {
-        if (!m_firstToken)
-            m_firstToken = ast;
-        if (m_file->startOf(ast) >= m_symbolPos)
-            m_done = true;
-        return !m_done;
-    }
-
-    bool visit(NamespaceAST *ns) override
-    {
-        if (!m_firstNamespace)
-            m_firstNamespace = ns;
-        if (m_remainingNamespaces.isEmpty()) {
-            m_done = true;
-            return false;
-        }
-
-        QString name;
-        const Identifier * const id = translationUnit()->identifier(ns->identifier_token);
-        if (id)
-            name = QString::fromUtf8(id->chars(), id->size());
-        if (name != m_remainingNamespaces.first())
-            return false;
-
-        if (!ns->linkage_body) {
-            m_done = true;
-            return false;
-        }
-
-        m_enclosingNamespace = ns;
-        m_remainingNamespaces.removeFirst();
-        return !m_remainingNamespaces.isEmpty();
-    }
-
-    void postVisit(AST *ast) override
-    {
-        if (ast == m_enclosingNamespace)
-            m_done = true;
-    }
-
-    const CppRefactoringFile * const m_file;
-    const NamespaceAST *m_enclosingNamespace = nullptr;
-    const NamespaceAST *m_firstNamespace = nullptr;
-    const AST *m_firstToken = nullptr;
-    QStringList m_remainingNamespaces;
-    const int m_symbolPos;
-    bool m_done = false;
-};
-
-/**
- * @brief The NSCheckerVisitor class checks which namespaces are missing for a given list
- * of enclosing namespaces at a given position
- */
-class NSCheckerVisitor : public ASTVisitor
-{
-public:
-    NSCheckerVisitor(const CppRefactoringFile *file, const QStringList &namespaces, int symbolPos)
-        : ASTVisitor(file->cppDocument()->translationUnit())
-        , m_file(file)
-        , m_remainingNamespaces(namespaces)
-        , m_symbolPos(symbolPos)
-    {}
-    /**
-     * @brief returns the names of the namespaces that are additionally needed at the symbolPos
-     * @return A list of namespace names, the outermost namespace at index 0 and the innermost
-     * at the last index
-     */
-    const QStringList remainingNamespaces() const { return m_remainingNamespaces; }
-
-private:
-    bool preVisit(AST *ast) override
-    {
-        if (m_file->startOf(ast) >= m_symbolPos)
-            m_done = true;
-        return !m_done;
-    }
-
-    void postVisit(AST *ast) override
-    {
-        if (!m_done && m_file->endOf(ast) > m_symbolPos)
-            m_done = true;
-    }
-
-    bool visit(NamespaceAST *ns) override
-    {
-        if (m_remainingNamespaces.isEmpty())
-            return false;
-
-        QString name = getName(ns);
-        if (name != m_remainingNamespaces.first())
-            return false;
-
-        m_enteredNamespaces.push_back(ns);
-        m_remainingNamespaces.removeFirst();
-        // if we reached the searched namespace we don't have to search deeper
-        return !m_remainingNamespaces.isEmpty();
-    }
-
-    bool visit(UsingDirectiveAST *usingNS) override
-    {
-        // example: we search foo::bar and get 'using namespace foo;using namespace foo::bar;'
-        const QString fullName = Overview{}.prettyName(usingNS->name->name);
-        const QStringList namespaces = fullName.split("::");
-        if (namespaces.length() > m_remainingNamespaces.length())
-            return false;
-
-        // from other using namespace statements
-        const auto curList = m_usingsPerNamespace.find(currentNamespace());
-        const bool isCurListValid = curList != m_usingsPerNamespace.end();
-
-        const bool startEqual = std::equal(namespaces.cbegin(),
-                                           namespaces.cend(),
-                                           m_remainingNamespaces.cbegin());
-        if (startEqual) {
-            if (isCurListValid) {
-                if (namespaces.length() > curList->second.length()) {
-                    // eg. we already have 'using namespace foo;' and
-                    // now get 'using namespace foo::bar;'
-                    curList->second = namespaces;
-                }
-                // the other case: first 'using namespace foo::bar;' and now 'using namespace foo;'
-            } else
-                m_usingsPerNamespace.emplace(currentNamespace(), namespaces);
-        } else if (isCurListValid) {
-            // ex: we have already 'using namespace foo;' and get 'using namespace bar;' now
-            QStringList newlist = curList->second;
-            newlist.append(namespaces);
-            if (newlist.length() <= m_remainingNamespaces.length()) {
-                const bool startEqual = std::equal(newlist.cbegin(),
-                                                   newlist.cend(),
-                                                   m_remainingNamespaces.cbegin());
-                if (startEqual)
-                    curList->second.append(namespaces);
-            }
-        }
-        return false;
-    }
-
-    void endVisit(NamespaceAST *ns) override
-    {
-        // if the symbolPos was in the namespace and the
-        // namespace has no children, m_done should be true
-        postVisit(ns);
-        if (!m_done && currentNamespace() == ns) {
-            // we were not succesfull in this namespace, so undo all changes
-            m_remainingNamespaces.push_front(getName(currentNamespace()));
-            m_usingsPerNamespace.erase(currentNamespace());
-            m_enteredNamespaces.pop_back();
-        }
-    }
-
-    void endVisit(TranslationUnitAST *) override
-    {
-        // the last node, create the final result
-        // we must handle like the following: We search for foo::bar and have:
-        // using namespace foo::bar;
-        // namespace foo {
-        //    // cursor/symbolPos here
-        // }
-        if (m_remainingNamespaces.empty()) {
-            // we are already finished
-            return;
-        }
-        // find the longest combination of normal namespaces + using statements
-        int longestNamespaceList = 0;
-        int enteredNamespaceCount = 0;
-        // check 'using namespace ...;' statements in the global scope
-        const auto namespaces = m_usingsPerNamespace.find(nullptr);
-        if (namespaces != m_usingsPerNamespace.end())
-            longestNamespaceList = namespaces->second.length();
-
-        for (auto ns : m_enteredNamespaces) {
-            ++enteredNamespaceCount;
-            const auto namespaces = m_usingsPerNamespace.find(ns);
-            int newListLength = enteredNamespaceCount;
-            if (namespaces != m_usingsPerNamespace.end())
-                newListLength += namespaces->second.length();
-            longestNamespaceList = std::max(newListLength, longestNamespaceList);
-        }
-        m_remainingNamespaces.erase(m_remainingNamespaces.begin(),
-                                    m_remainingNamespaces.begin() + longestNamespaceList
-                                        - m_enteredNamespaces.size());
-    }
-
-    QString getName(NamespaceAST *ns)
-    {
-        const Identifier *const id = translationUnit()->identifier(ns->identifier_token);
-        if (id)
-            return QString::fromUtf8(id->chars(), id->size());
-        return {};
-    }
-
-    NamespaceAST *currentNamespace()
-    {
-        return m_enteredNamespaces.empty() ? nullptr : m_enteredNamespaces.back();
-    }
-
-    const CppRefactoringFile *const m_file;
-    QStringList m_remainingNamespaces;
-    const int m_symbolPos;
-    std::vector<NamespaceAST *> m_enteredNamespaces;
-    // track 'using namespace ...' statements
-    std::unordered_map<NamespaceAST *, QStringList> m_usingsPerNamespace;
-    bool m_done = false;
-};
-
-/**
- * @brief getListOfMissingNamespacesForLocation checks which namespaces are present at a given
- * location and returns a list of namespace names that are needed to get the wanted namespace
- * @param file The file of the location
- * @param wantedNamespaces the namespace as list that should exists at the insert location
- * @param loc The location that should be checked (the namespaces should be available there)
- * @return A list of namespaces that are missing to reach the wanted namespaces.
- */
-QStringList getListOfMissingNamespacesForLocation(const CppRefactoringFile *file,
-                                                  const QStringList &wantedNamespaces,
-                                                  InsertionLocation loc)
-{
-    NSCheckerVisitor visitor(file, wantedNamespaces, file->position(loc.line(), loc.column()));
-    visitor.accept(file->cppDocument()->translationUnit()->ast());
-    return visitor.remainingNamespaces();
-}
-
 enum DefPos {
     DefPosInsideClass,
     DefPosOutsideClass,
     DefPosImplementationFile
 };
 
-/**
- * @brief getNamespaceNames Returns a list of namespaces for an enclosing namespaces of a
- * namespace (contains the namespace itself)
- * @param firstNamespace the starting namespace (included in the list)
- * @return the enclosing namespaces, the outermost namespace is at the first index, the innermost
- * at the last index
- */
-QStringList getNamespaceNames(const Namespace *firstNamespace)
-{
-    QStringList namespaces;
-    for (const Namespace *scope = firstNamespace; scope; scope = scope->enclosingNamespace()) {
-        if (scope->name() && scope->name()->identifier()) {
-            namespaces.prepend(QString::fromUtf8(scope->name()->identifier()->chars(),
-                                                 scope->name()->identifier()->size()));
-        } else {
-            namespaces.prepend(""); // an unnamed namespace
-        }
-    }
-    namespaces.pop_front(); // the "global namespace" is one namespace, but not an unnamed
-    return namespaces;
-}
-
-/**
- * @brief getNamespaceNames Returns a list of enclosing namespaces for a symbol
- * @param symbol a symbol from which we want the enclosing namespaces
- * @return the enclosing namespaces, the outermost namespace is at the first index, the innermost
- * at the last index
- */
-QStringList getNamespaceNames(const Symbol *symbol)
-{
-    return getNamespaceNames(symbol->enclosingNamespace());
-}
-
-// TODO: We should use the "CreateMissing" approach everywhere.
-enum class NamespaceHandling { CreateMissing, Ignore };
-InsertionLocation insertLocationForMethodDefinition(Symbol *symbol,
-                                                    const bool useSymbolFinder,
-                                                    NamespaceHandling namespaceHandling,
-                                                    const CppRefactoringChanges &refactoring,
-                                                    const QString &fileName,
-                                                    QStringList *insertedNamespaces = nullptr)
-{
-    QTC_ASSERT(symbol, return InsertionLocation());
-
-    CppRefactoringFilePtr file = refactoring.file(fileName);
-    QStringList requiredNamespaces;
-    if (namespaceHandling == NamespaceHandling::CreateMissing) {
-        requiredNamespaces = getNamespaceNames(symbol);
-    }
-
-    // Try to find optimal location
-    // FIXME: The locator should not return a valid location if the namespaces don't match
-    //        (or provide enough context).
-    const InsertionPointLocator locator(refactoring);
-    const QList<InsertionLocation> list
-            = locator.methodDefinition(symbol, useSymbolFinder, fileName);
-    const bool isHeader = ProjectFile::isHeader(ProjectFile::classify(fileName));
-    const bool hasIncludeGuard = isHeader
-            && !file->cppDocument()->includeGuardMacroName().isEmpty();
-    int lastLine;
-    if (hasIncludeGuard) {
-        const TranslationUnit * const tu = file->cppDocument()->translationUnit();
-        tu->getTokenStartPosition(tu->ast()->lastToken(), &lastLine);
-    }
-    int i = 0;
-    for ( ; i < list.count(); ++i) {
-        InsertionLocation location = list.at(i);
-        if (!location.isValid() || location.fileName() != fileName)
-            continue;
-        if (hasIncludeGuard && location.line() == lastLine)
-            continue;
-        if (!requiredNamespaces.isEmpty()) {
-            QStringList missing = getListOfMissingNamespacesForLocation(file.get(),
-                                                                        requiredNamespaces,
-                                                                        location);
-            if (!missing.isEmpty())
-                continue;
-        }
-        return location;
-    }
-
-    // ...failed,
-    // if class member try to get position right after class
-    int line = 0, column = 0;
-    if (Class *clazz = symbol->enclosingClass()) {
-        if (symbol->fileName() == fileName.toUtf8()) {
-            file->cppDocument()->translationUnit()->getPosition(clazz->endOffset(), &line, &column);
-            if (line != 0) {
-                ++column; // Skipping the ";"
-                return InsertionLocation(fileName, QLatin1String("\n\n"), QLatin1String(""),
-                                         line, column);
-            }
-        }
-    }
-
-    // fall through: position at end of file, unless we find a matching namespace
-    const QTextDocument *doc = file->document();
-    int pos = qMax(0, doc->characterCount() - 1);
-    QString prefix = "\n\n";
-    QString suffix = "\n\n";
-    NSVisitor visitor(file.data(), requiredNamespaces, pos);
-    visitor.accept(file->cppDocument()->translationUnit()->ast());
-    if (visitor.enclosingNamespace())
-        pos = file->startOf(visitor.enclosingNamespace()->linkage_body) + 1;
-    for (const QString &ns : visitor.remainingNamespaces()) {
-        prefix += "namespace " + ns + " {\n";
-        suffix += "}\n";
-    }
-    if (insertedNamespaces)
-        *insertedNamespaces = visitor.remainingNamespaces();
-
-    //TODO watch for moc-includes
-
-    file->lineAndColumn(pos, &line, &column);
-    return InsertionLocation(fileName, prefix, suffix, line, column);
-}
 
 inline bool isQtStringLiteral(const QByteArray &id)
 {
@@ -746,6 +394,8 @@ void InverseLogicalComparison::match(const CppQuickFixInterface &interface,
     CppRefactoringFilePtr file = interface.currentFile();
 
     const QList<AST *> &path = interface.path();
+    if (path.isEmpty())
+        return;
     int index = path.size() - 1;
     BinaryExpressionAST *binary = path.at(index)->asBinaryExpression();
     if (!binary)
@@ -827,6 +477,8 @@ private:
 void FlipLogicalOperands::match(const CppQuickFixInterface &interface, QuickFixOperations &result)
 {
     const QList<AST *> &path = interface.path();
+    if (path.isEmpty())
+        return;
     CppRefactoringFilePtr file = interface.currentFile();
 
     int index = path.size() - 1;
@@ -1094,6 +746,8 @@ private:
 void AddBracesToIf::match(const CppQuickFixInterface &interface, QuickFixOperations &result)
 {
     const QList<AST *> &path = interface.path();
+    if (path.isEmpty())
+        return;
 
     // show when we're on the 'if' of an if statement
     int index = path.size() - 1;
@@ -2833,7 +2487,7 @@ void CompleteSwitchCaseStatement::match(const CppQuickFixInterface &interface,
         AST *ast = path.at(depth);
         SwitchStatementAST *switchStatement = ast->asSwitchStatement();
         if (switchStatement) {
-            if (!interface.isCursorOn(switchStatement->switch_token) || !switchStatement->statement)
+            if (!switchStatement->statement)
                 return;
             CompoundStatementAST *compoundStatement = switchStatement->statement->asCompoundStatement();
             if (!compoundStatement) // we ignore pathologic case "switch (t) case A: ;"
@@ -3459,7 +3113,7 @@ public:
         defaultImplTargetComboBox->insertItems(0, implTargetStrings);
         connect(defaultImplTargetComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this,
                 [this](int index) {
-            for (QComboBox * const cb : m_implTargetBoxes)
+            for (QComboBox * const cb : qAsConst(m_implTargetBoxes))
                 cb->setCurrentIndex(index);
         });
         const auto defaultImplTargetLayout = new QHBoxLayout;
@@ -3958,9 +3612,9 @@ protected:
         const auto insertionPoint = m_headerInsertionPoints.find(spec);
         if (insertionPoint != m_headerInsertionPoints.end())
             return *insertionPoint;
-        const InsertionLocation loc = m_locator.methodDeclarationInClass(m_headerFile->fileName(),
-                                                                         m_class,
-                                                                         spec);
+        const InsertionLocation loc = m_locator.methodDeclarationInClass(
+                    m_headerFile->fileName(), m_class, spec,
+                    InsertionPointLocator::ForceAccessSpec::Yes);
         m_headerInsertionPoints.insert(spec, loc);
         return loc;
     }
@@ -4967,7 +4621,7 @@ public:
         }
         const QStringList memberFunctionsAsStrings = toStringList(memberFunctions);
 
-        for (Symbol *const member : dataMembers) {
+        for (Symbol *const member : qAsConst(dataMembers)) {
             ExistingGetterSetterData existing;
             existing.memberVariableName = QString::fromUtf8(member->identifier()->chars(),
                                                             member->identifier()->size());
@@ -7516,6 +7170,8 @@ private:
 void EscapeStringLiteral::match(const CppQuickFixInterface &interface, QuickFixOperations &result)
 {
     const QList<AST *> &path = interface.path();
+    if (path.isEmpty())
+        return;
 
     AST * const lastAst = path.last();
     ExpressionAST *literal = lastAst->asStringLiteral();
@@ -8344,7 +8000,7 @@ private:
             processIncludes(refactoring, filePath().toString());
         }
 
-        for (auto &file : m_changes)
+        for (auto &file : qAsConst(m_changes))
             file->apply();
     }
 
@@ -8429,6 +8085,8 @@ void RemoveUsingNamespace::match(const CppQuickFixInterface &interface, QuickFix
 
 namespace {
 
+struct ParentClassConstructorInfo;
+
 class ConstructorMemberInfo
 {
 public:
@@ -8439,7 +8097,20 @@ public:
         , type(symbol->type())
         , numberOfMember(numberOfMember)
     {}
-
+    ConstructorMemberInfo(const QString &memberName,
+                          const QString &paramName,
+                          const QString &defaultValue,
+                          Symbol *symbol,
+                          const ParentClassConstructorInfo *parentClassConstructor)
+        : parentClassConstructor(parentClassConstructor)
+        , memberVariableName(memberName)
+        , parameterName(paramName)
+        , defaultValue(defaultValue)
+        , init(defaultValue.isEmpty())
+        , symbol(symbol)
+        , type(symbol->type())
+    {}
+    const ParentClassConstructorInfo *parentClassConstructor = nullptr;
     QString memberVariableName;
     QString parameterName;
     QString defaultValue;
@@ -8449,12 +8120,12 @@ public:
     FullySpecifiedType type;
     int numberOfMember; // first member, second member, ...
 };
-using ConstructorMemberCandidates = std::vector<ConstructorMemberInfo>;
 
 class ConstructorParams : public QAbstractTableModel
 {
     Q_OBJECT
-    std::vector<ConstructorMemberInfo *> &infos;
+    std::list<ConstructorMemberInfo> candidates;
+    std::vector<ConstructorMemberInfo *> infos;
 
     void validateOrder()
     {
@@ -8474,18 +8145,55 @@ class ConstructorParams : public QAbstractTableModel
 
 public:
     enum Column { ShouldInitColumn, MemberNameColumn, ParameterNameColumn, DefaultValueColumn };
-    ConstructorParams(QObject *parent, std::vector<ConstructorMemberInfo *> &infos)
-        : QAbstractTableModel(parent)
-        , infos(infos)
-    {}
+    template<typename... _Args>
+    void emplaceBackParameter(_Args &&...__args)
+    {
+        candidates.emplace_back(std::forward<_Args>(__args)...);
+        infos.push_back(&candidates.back());
+    }
+    const std::vector<ConstructorMemberInfo *> &getInfos() const { return infos; }
+    void addRow(ConstructorMemberInfo *info)
+    {
+        beginInsertRows({}, rowCount(), rowCount());
+        infos.push_back(info);
+        endInsertRows();
+        validateOrder();
+    }
+    void removeRow(ConstructorMemberInfo *info)
+    {
+        for (auto iter = infos.begin(); iter != infos.end(); ++iter) {
+            if (*iter == info) {
+                const auto index = iter - infos.begin();
+                beginRemoveRows({}, index, index);
+                infos.erase(iter);
+                endRemoveRows();
+                validateOrder();
+                return;
+            }
+        }
+    }
 
-    int rowCount(const QModelIndex & /*parent*/ = {}) const override { return infos.size(); }
+    int selectedCount() const
+    {
+        return Utils::count(infos, [](const ConstructorMemberInfo *mi) {
+            return mi->init && !mi->parentClassConstructor;
+        });
+    }
+    int memberCount() const
+    {
+        return Utils::count(infos, [](const ConstructorMemberInfo *mi) {
+            return !mi->parentClassConstructor;
+        });
+    }
+
+    int rowCount(const QModelIndex & /*parent*/ = {}) const override { return int(infos.size()); }
     int columnCount(const QModelIndex & /*parent*/ = {}) const override { return 4; }
     QVariant data(const QModelIndex &index, int role) const override
     {
         if (index.row() < 0 || index.row() >= rowCount())
             return {};
-        if (role == Qt::CheckStateRole && index.column() == ShouldInitColumn)
+        if (role == Qt::CheckStateRole && index.column() == ShouldInitColumn
+            && !infos[index.row()]->parentClassConstructor)
             return infos[index.row()]->init ? Qt::Checked : Qt::Unchecked;
         if (role == Qt::DisplayRole && index.column() == MemberNameColumn)
             return infos[index.row()]->memberVariableName;
@@ -8495,15 +8203,17 @@ public:
         if ((role == Qt::DisplayRole || role == Qt::EditRole)
             && index.column() == DefaultValueColumn)
             return infos[index.row()]->defaultValue;
-        if ((role == Qt::ToolTipRole) && index.column() == DefaultValueColumn)
+        if ((role == Qt::ToolTipRole) && index.column() > 0)
             return Overview{}.prettyType(infos[index.row()]->symbol->type());
         return {};
     }
     bool setData(const QModelIndex &index, const QVariant &value, int role) override
     {
         if (index.column() == ShouldInitColumn && role == Qt::CheckStateRole) {
+            if (infos[index.row()]->parentClassConstructor)
+                return false;
             infos[index.row()]->init = value.toInt() == Qt::Checked;
-            emit dataChanged(this->index(index.row(), 1), this->index(index.row(), 2));
+            emit dataChanged(this->index(index.row(), 0), this->index(index.row(), columnCount()));
             validateOrder();
             return true;
         }
@@ -8530,7 +8240,7 @@ public:
             f |= Qt::ItemIsSelectable;
         }
 
-        if (index.column() == ShouldInitColumn)
+        if (index.column() == ShouldInitColumn && !infos[index.row()]->parentClassConstructor)
             return f | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable;
         if (!infos[index.row()]->init)
             return f;
@@ -8597,14 +8307,14 @@ public:
     class TableViewStyle : public QProxyStyle
     {
     public:
-        TableViewStyle(QStyle *style = 0)
+        TableViewStyle(QStyle *style)
             : QProxyStyle(style)
         {}
 
         void drawPrimitive(PrimitiveElement element,
                            const QStyleOption *option,
                            QPainter *painter,
-                           const QWidget *widget = 0) const
+                           const QWidget *widget) const override
         {
             if (element == QStyle::PE_IndicatorItemViewItemDrop && !option->rect.isNull()) {
                 QStyleOption opt(*option);
@@ -8621,23 +8331,250 @@ signals:
     void validOrder(bool valid);
 };
 
+class TopMarginDelegate : public QStyledItemDelegate
+{
+public:
+    TopMarginDelegate(QObject *parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {}
+
+    void paint(QPainter *painter,
+               const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        Q_ASSERT(index.isValid());
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        const QWidget *widget = option.widget;
+        QStyle *style = widget ? widget->style() : QApplication::style();
+        if (opt.rect.height() > 20)
+            opt.rect.adjust(0, 5, 0, 0);
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+    }
+};
+
+struct ParentClassConstructorParameter : public ConstructorMemberInfo
+{
+    QString originalDefaultValue;
+    QString declaration; // displayed in the treeView
+    ParentClassConstructorParameter(const QString &name,
+                                    const QString &defaultValue,
+                                    Symbol *symbol,
+                                    const ParentClassConstructorInfo *parentClassConstructor);
+
+    ParentClassConstructorParameter(const ParentClassConstructorParameter &) = delete;
+    ParentClassConstructorParameter(ParentClassConstructorParameter &&) = default;
+};
+
+struct ParentClassConstructorInfo
+{
+    ParentClassConstructorInfo(const QString &name, ConstructorParams &model)
+        : className(name)
+        , model(model)
+    {}
+    bool useInConstructor = false;
+    const QString className;
+    QString declaration;
+    std::vector<ParentClassConstructorParameter> parameters;
+    ConstructorParams &model;
+
+    ParentClassConstructorInfo(const ParentClassConstructorInfo &) = delete;
+    ParentClassConstructorInfo(ParentClassConstructorInfo &&) = default;
+
+    void addParameter(ParentClassConstructorParameter &param) { model.addRow(&param); }
+    void removeParameter(ParentClassConstructorParameter &param) { model.removeRow(&param); }
+    void removeAllParameters()
+    {
+        for (auto &param : parameters)
+            model.removeRow(&param);
+    }
+};
+
+ParentClassConstructorParameter::ParentClassConstructorParameter(
+    const QString &name,
+    const QString &defaultValue,
+    Symbol *symbol,
+    const ParentClassConstructorInfo *parentClassConstructor)
+    : ConstructorMemberInfo(parentClassConstructor->className + "::" + name,
+                            name,
+                            defaultValue,
+                            symbol,
+                            parentClassConstructor)
+    , originalDefaultValue(defaultValue)
+    , declaration(Overview{}.prettyType(symbol->type(), name)
+                  + (defaultValue.isEmpty() ? QString{} : " = " + defaultValue))
+{}
+
+using ParentClassConstructors = std::vector<ParentClassConstructorInfo>;
+
+class ParentClassesModel : public QAbstractItemModel
+{
+    ParentClassConstructors &constructors;
+
+public:
+    ParentClassesModel(QObject *parent, ParentClassConstructors &constructors)
+        : QAbstractItemModel(parent)
+        , constructors(constructors)
+    {}
+    QModelIndex index(int row, int column, const QModelIndex &parent = {}) const override
+    {
+        if (!parent.isValid())
+            return createIndex(row, column, nullptr);
+        if (parent.internalPointer())
+            return {};
+        auto index = createIndex(row, column, &constructors.at(parent.row()));
+        return index;
+    }
+    QModelIndex parent(const QModelIndex &index) const override
+    {
+        if (!index.isValid())
+            return {};
+        auto *parent = static_cast<ParentClassConstructorInfo *>(index.internalPointer());
+        if (!parent)
+            return {};
+        int i = 0;
+        for (const auto &info : constructors) {
+            if (&info == parent)
+                return createIndex(i, 0, nullptr);
+            ++i;
+        }
+        return {};
+    }
+    int rowCount(const QModelIndex &parent = {}) const override
+    {
+        if (!parent.isValid())
+            return static_cast<int>(constructors.size());
+        auto info = static_cast<ParentClassConstructorInfo *>(parent.internalPointer());
+        if (!info)
+            return static_cast<int>(constructors.at(parent.row()).parameters.size());
+        return 0;
+    }
+    int columnCount(const QModelIndex & /*parent*/ = {}) const override { return 1; }
+    QVariant data(const QModelIndex &index, int role) const override
+    {
+        if (!index.isValid())
+            return {};
+        auto info = static_cast<ParentClassConstructorInfo *>(index.internalPointer());
+
+        if (info) {
+            const auto &parameter = info->parameters.at(index.row());
+            if (role == Qt::CheckStateRole)
+                return parameter.init ? Qt::Checked : Qt::Unchecked;
+            if (role == Qt::DisplayRole)
+                return parameter.declaration;
+            return {};
+        }
+        const auto &constructor = constructors.at(index.row());
+        if (role == Qt::CheckStateRole)
+            return constructor.useInConstructor ? Qt::PartiallyChecked : Qt::Unchecked;
+        if (role == Qt::DisplayRole)
+            return constructor.declaration;
+
+        // Highlight the selected items
+        if (role == Qt::FontRole && constructor.useInConstructor) {
+            QFont font = QApplication::font();
+            font.setBold(true);
+            return font;
+        }
+        // Create a margin between sets of constructors for base classes
+        if (role == Qt::SizeHintRole && index.row() > 0
+            && constructor.className != constructors.at(index.row() - 1).className) {
+            return QSize(-1, 25);
+        }
+        return {};
+    }
+    bool setData(const QModelIndex &index, const QVariant &value, int /*role*/) override
+    {
+        if (index.isValid() && index.column() == 0) {
+            auto info = static_cast<ParentClassConstructorInfo *>(index.internalPointer());
+            if (info) {
+                const bool nowUse = value.toBool();
+                auto &param = info->parameters.at(index.row());
+                param.init = nowUse;
+                if (nowUse)
+                    info->addParameter(param);
+                else
+                    info->removeParameter(param);
+                return true;
+            }
+            auto &newConstructor = constructors.at(index.row());
+            // You have to select a base class constructor
+            if (newConstructor.useInConstructor)
+                return false;
+            auto c = std::find_if(constructors.begin(), constructors.end(), [&](const auto &c) {
+                return c.className == newConstructor.className && c.useInConstructor;
+            });
+            QTC_ASSERT(c == constructors.end(), return false;);
+            c->useInConstructor = false;
+            newConstructor.useInConstructor = true;
+            emit dataChanged(this->index(index.row(), 0), this->index(index.row(), columnCount()));
+            auto parentIndex = this->index(index.row(), 0);
+            emit dataChanged(this->index(0, 0, parentIndex),
+                             this->index(rowCount(parentIndex), columnCount()));
+            const int oldIndex = c - constructors.begin();
+            emit dataChanged(this->index(oldIndex, 0), this->index(oldIndex, columnCount()));
+            parentIndex = this->index(oldIndex, 0);
+            emit dataChanged(this->index(0, 0, parentIndex),
+                             this->index(rowCount(parentIndex), columnCount()));
+            // update other table
+            c->removeAllParameters();
+            for (auto &p : newConstructor.parameters)
+                if (p.init)
+                    newConstructor.addParameter(p);
+            return true;
+        }
+        return false;
+    }
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override
+    {
+        if (orientation == Qt::Horizontal && role == Qt::DisplayRole) {
+            switch (section) {
+            case 0:
+                return tr("Base Class Constructors");
+            }
+        }
+        return {};
+    }
+    Qt::ItemFlags flags(const QModelIndex &index) const override
+    {
+        if (index.isValid()) {
+            Qt::ItemFlags f;
+            auto info = static_cast<ParentClassConstructorInfo *>(index.internalPointer());
+            if (!info || info->useInConstructor) {
+                f |= Qt::ItemIsEnabled;
+            }
+            f |= Qt::ItemIsUserCheckable;
+
+            return f;
+        }
+        return {};
+    }
+};
+
 class GenerateConstructorDialog : public QDialog
 {
     Q_DECLARE_TR_FUNCTIONS(GenerateConstructorDialog)
 public:
-    GenerateConstructorDialog(std::vector<ConstructorMemberInfo *> &candidates)
-        : QDialog()
+    GenerateConstructorDialog(ConstructorParams *constructorParamsModel,
+                              ParentClassConstructors &constructors)
     {
         setWindowTitle(tr("Constructor"));
-        const auto model = new ConstructorParams(this, candidates);
+
+        const auto treeModel = new ParentClassesModel(this, constructors);
+        const auto treeView = new QTreeView(this);
+        treeView->setModel(treeModel);
+        treeView->setItemDelegate(new TopMarginDelegate(this));
+        treeView->expandAll();
+
         const auto view = new QTableView(this);
-        view->setModel(model);
+        view->setModel(constructorParamsModel);
         int optimalWidth = 0;
-        for (int i = 0; i < model->columnCount(QModelIndex{}); ++i) {
+        for (int i = 0; i < constructorParamsModel->columnCount(QModelIndex{}); ++i) {
             view->resizeColumnToContents(i);
             optimalWidth += view->columnWidth(i);
         }
         view->resizeRowsToContents();
+        view->verticalHeader()->setDefaultSectionSize(view->rowHeight(0));
         view->setSelectionBehavior(QAbstractItemView::SelectRows);
         view->setSelectionMode(QAbstractItemView::SingleSelection);
         view->setDragEnabled(true);
@@ -8659,7 +8596,7 @@ public:
         QSizePolicy labelSizePolicy = errorLabel->sizePolicy();
         labelSizePolicy.setRetainSizeWhenHidden(true);
         errorLabel->setSizePolicy(labelSizePolicy);
-        connect(model,
+        connect(constructorParamsModel,
                 &ConstructorParams::validOrder,
                 [=, button = buttonBox->button(QDialogButtonBox::Ok)](bool valid) {
                     button->setEnabled(valid);
@@ -8669,7 +8606,7 @@ public:
         // setup select all/none checkbox
         QCheckBox *const checkBox = new QCheckBox(tr("Initialize all members"));
         checkBox->setChecked(true);
-        connect(checkBox, &QCheckBox::stateChanged, [model](int state) {
+        connect(checkBox, &QCheckBox::stateChanged, [model = constructorParamsModel](int state) {
             if (state != Qt::PartiallyChecked) {
                 for (int i = 0; i < model->rowCount(); ++i)
                     model->setData(model->index(i, ConstructorParams::ShouldInitColumn),
@@ -8681,20 +8618,19 @@ public:
             if (checkBox->checkState() == Qt::PartiallyChecked)
                 checkBox->setCheckState(Qt::Checked);
         });
-        connect(model, &QAbstractItemModel::dataChanged, this, [&candidates, checkBox] {
-            const auto selectedCount = Utils::count(candidates, [](const ConstructorMemberInfo *mi) {
-                return mi->init;
-            });
-
-            const auto state = [&candidates, selectedCount]() {
-                if (selectedCount == 0)
-                    return Qt::Unchecked;
-                if (static_cast<int>(candidates.size()) == selectedCount)
-                    return Qt::Checked;
-                return Qt::PartiallyChecked;
-            }();
-            checkBox->setCheckState(state);
-        });
+        connect(constructorParamsModel,
+                &QAbstractItemModel::dataChanged,
+                this,
+                [model = constructorParamsModel, checkBox] {
+                    const auto state = [model, selectedCount = model->selectedCount()]() {
+                        if (selectedCount == 0)
+                            return Qt::Unchecked;
+                        if (static_cast<int>(model->memberCount() == selectedCount))
+                            return Qt::Checked;
+                        return Qt::PartiallyChecked;
+                    }();
+                    checkBox->setCheckState(state);
+                });
 
         using A = InsertionPointLocator::AccessSpec;
         auto accessCombo = new QComboBox;
@@ -8716,6 +8652,7 @@ public:
         mainLayout->addLayout(row);
         mainLayout->addWidget(checkBox);
         mainLayout->addWidget(view);
+        mainLayout->addWidget(treeView);
         mainLayout->addWidget(errorLabel);
         mainLayout->addWidget(buttonBox);
         int left, right;
@@ -8756,29 +8693,108 @@ public:
             if (s->isDeclaration() && (s->isPrivate() || s->isProtected()) && !s->isStatic()) {
                 const auto name = QString::fromUtf8(s->identifier()->chars(),
                                                     s->identifier()->size());
-                m_candidates.emplace_back(name, s, memberCounter++);
+                parameterModel.emplaceBackParameter(name, s, memberCounter++);
             }
         }
+        Overview o = CppCodeStyleSettings::currentProjectCodeStyleOverview();
+        o.showArgumentNames = true;
+        o.showReturnTypes = true;
+        o.showDefaultArguments = true;
+        o.showTemplateParameters = true;
+        o.showFunctionSignatures = true;
+        LookupContext context(currentFile()->cppDocument(), interface.snapshot());
+        for (BaseClass *bc : theClass->baseClasses()) {
+            const QString className = o.prettyName(bc->name());
+
+            ClassOrNamespace *localLookupType = context.lookupType(bc);
+            QList<LookupItem> localLookup = localLookupType->lookup(bc->name());
+            for (auto &li : localLookup) {
+                Symbol *d = li.declaration();
+                if (!d->asClass())
+                    continue;
+                for (auto i = d->asClass()->memberBegin(); i != d->asClass()->memberEnd(); ++i) {
+                    Symbol *s = *i;
+                    if (s->isProtected() || s->isPublic()) {
+                        if (s->name()->match(d->name())) {
+                            // we have found a constructor
+                            Function *func = s->type().type()->asFunctionType();
+                            if (!func)
+                                continue;
+                            const bool isFirst = parentClassConstructors.empty()
+                                                 || parentClassConstructors.back().className
+                                                        != className;
+                            parentClassConstructors.emplace_back(className, parameterModel);
+                            ParentClassConstructorInfo &constructor = parentClassConstructors.back();
+                            constructor.declaration = className + o.prettyType(func->type());
+                            constructor.declaration.replace("std::__1::__get_nullptr_t()",
+                                                            "nullptr");
+                            constructor.useInConstructor = isFirst;
+                            for (auto arg = func->memberBegin(); arg != func->memberEnd(); ++arg) {
+                                Symbol *param = *arg;
+                                Argument *argument = param->asArgument();
+                                if (!argument) // can also be a block
+                                    continue;
+                                const QString name = o.prettyName(param->name());
+                                const StringLiteral *ini = argument->initializer();
+                                QString defaultValue;
+                                if (ini)
+                                    defaultValue = QString::fromUtf8(ini->chars(), ini->size())
+                                                       .replace("std::__1::__get_nullptr_t()",
+                                                                "nullptr");
+                                constructor.parameters.emplace_back(name,
+                                                                    defaultValue,
+                                                                    param,
+                                                                    &constructor);
+                                // do not show constructors like QObject(QObjectPrivate & dd, ...)
+                                ReferenceType *ref = param->type()->asReferenceType();
+                                if (ref && name == "dd") {
+                                    auto type = o.prettyType(ref->elementType());
+                                    if (type.startsWith("Q") && type.endsWith("Private")) {
+                                        parentClassConstructors.pop_back();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // add params to parameter lists
+        for (auto &c : parentClassConstructors)
+            if (c.useInConstructor)
+                for (auto &p : c.parameters)
+                    if (p.init)
+                        c.addParameter(p);
     }
 
-    bool isApplicable() const { return !m_candidates.empty(); }
+    bool isApplicable() const
+    {
+        return parameterModel.rowCount() > 0
+               || Utils::anyOf(parentClassConstructors,
+                               [](const auto &parent) { return !parent.parameters.empty(); });
+    }
 
     void setTest(bool isTest = true) { m_test = isTest; }
 
 private:
     void perform() override
     {
-        std::vector<ConstructorMemberInfo *> infos;
-        for (auto &info : m_candidates)
-            infos.push_back(&info);
+        auto infos = parameterModel.getInfos();
 
         InsertionPointLocator::AccessSpec accessSpec = InsertionPointLocator::Public;
         if (!m_test) {
-            GenerateConstructorDialog dlg(infos);
+            GenerateConstructorDialog dlg(&parameterModel, parentClassConstructors);
             if (dlg.exec() == QDialog::Rejected)
                 return;
             accessSpec = dlg.accessSpec();
+            infos = parameterModel.getInfos();
         } else {
+#ifdef WITH_TESTS
+            ParentClassesModel model(nullptr, parentClassConstructors);
+            QAbstractItemModelTester tester(&model);
+#endif
             if (infos.size() >= 3) {
                 // if we are testing and have 3 or more members => change the order
                 // move first element to the back
@@ -8788,6 +8804,16 @@ private:
             for (auto info : infos) {
                 if (info->memberVariableName.startsWith("di_"))
                     info->defaultValue = "42";
+            }
+            for (auto &c : parentClassConstructors) {
+                if (c.useInConstructor) {
+                    for (auto &p : c.parameters) {
+                        if (!p.init && p.parameterName.startsWith("use_")) {
+                            infos.push_back(&p);
+                            p.init = true;
+                        }
+                    }
+                }
             }
         }
         if (infos.empty())
@@ -8805,9 +8831,10 @@ private:
                 , m_classAST(classAST)
                 , m_accessSpec(accessSpec)
             {}
-            void generateConstructor(std::vector<ConstructorMemberInfo *> members)
+            void generateConstructor(std::vector<ConstructorMemberInfo *> members,
+                                     const ParentClassConstructors &parentClassConstructors)
             {
-                auto constructorLocation = m_settings->determineSetterLocation(members.size());
+                auto constructorLocation = m_settings->determineSetterLocation(int(members.size()));
                 if (constructorLocation == CppQuickFixSettings::FunctionLocation::CppFile
                     && !hasSourceFile())
                     constructorLocation = CppQuickFixSettings::FunctionLocation::OutsideClass;
@@ -8865,7 +8892,46 @@ private:
                     }
                 }
                 Utils::sort(members, &ConstructorMemberInfo::numberOfMember);
+                // first, do the base classes
+                for (const auto &parent : parentClassConstructors) {
+                    if (!parent.useInConstructor)
+                        continue;
+                    // Check if we really need a constructor
+                    if (Utils::anyOf(parent.parameters, [](const auto &param) {
+                            return param.init || param.originalDefaultValue.isEmpty();
+                        })) {
+                        int defaultAtEndCount = 0;
+                        for (auto i = parent.parameters.crbegin(); i != parent.parameters.crend();
+                             ++i) {
+                            if (i->init || i->originalDefaultValue.isEmpty())
+                                break;
+                            ++defaultAtEndCount;
+                        }
+                        const int numberOfParameters = static_cast<int>(parent.parameters.size())
+                                                       - defaultAtEndCount;
+                        constructorBody += parent.className + "(";
+                        int counter = 0;
+                        for (const auto &param : parent.parameters) {
+                            if (++counter > numberOfParameters)
+                                break;
+                            if (param.init) {
+                                if (param.customValueType)
+                                    constructorBody += "std::move(" + param.parameterName + ')';
+                                else
+                                    constructorBody += param.parameterName;
+                            } else if (!param.originalDefaultValue.isEmpty())
+                                constructorBody += param.originalDefaultValue;
+                            else
+                                constructorBody += "/* insert value */";
+                            constructorBody += ", ";
+                        }
+                        constructorBody.resize(constructorBody.length() - 2);
+                        constructorBody += "),\n";
+                    }
+                }
                 for (auto &member : members) {
+                    if (member->parentClassConstructor)
+                        continue;
                     QString param = member->parameterName;
                     if (member->customValueType)
                         param = "std::move(" + member->parameterName + ')';
@@ -8890,7 +8956,7 @@ private:
                                 m_locator.constructorDeclarationInClass(tu,
                                                                         m_classAST,
                                                                         m_accessSpec,
-                                                                        members.size()),
+                                                                        int(members.size())),
                                 inClassDeclaration);
 
                 if (constructorLocation == CppQuickFixSettings::FunctionLocation::CppFile) {
@@ -8909,12 +8975,15 @@ private:
                                                     m_classAST,
                                                     accessSpec);
 
-        auto members = Utils::filtered(infos, [](const auto mi) { return mi->init; });
-        helper.generateConstructor(std::move(members));
+        auto members = Utils::filtered(infos, [](const auto mi) {
+            return mi->init || mi->parentClassConstructor;
+        });
+        helper.generateConstructor(std::move(members), parentClassConstructors);
         helper.applyChanges();
     }
 
-    ConstructorMemberCandidates m_candidates;
+    ConstructorParams parameterModel;
+    ParentClassConstructors parentClassConstructors;
     const ClassSpecifierAST *m_classAST = nullptr;
     bool m_test = false;
 };

@@ -59,6 +59,10 @@ public:
         StringUse,
         FunctionDeclarationUse,
         VirtualFunctionDeclarationUse,
+        AngleBracketOpen,
+        AngleBracketClose,
+        TernaryIf,
+        TernaryElse,
     };
 
     using HighlightingRunner = std::function<QFuture<TextEditor::HighlightingResult> ()>;

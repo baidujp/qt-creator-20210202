@@ -1743,7 +1743,7 @@ static QByteArray runQmakeQuery(const FilePath &binary, const Environment &env,
         *error = QCoreApplication::translate("QtVersion", "Cannot start \"%1\": %2").arg(binary.toUserOutput()).arg(process.errorString());
         return QByteArray();
     }
-    if (!process.waitForFinished(timeOutMS) && process.state() == QProcess::Running) {
+    if (!process.waitForFinished(timeOutMS)) {
         SynchronousProcess::stopProcess(process);
         *error = QCoreApplication::translate("QtVersion", "Timeout running \"%1\" (%2 ms).").arg(binary.toUserOutput()).arg(timeOutMS);
         return QByteArray();
@@ -2351,7 +2351,7 @@ BaseQtVersion *QtVersionFactory::create() const
 
 BaseQtVersion *BaseQtVersion::clone() const
 {
-    for (QtVersionFactory *factory : g_qtVersionFactories) {
+    for (QtVersionFactory *factory : qAsConst(g_qtVersionFactories)) {
         if (factory->m_supportedType == d->m_type) {
             BaseQtVersion *version = factory->create();
             QTC_ASSERT(version, return nullptr);

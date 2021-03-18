@@ -41,7 +41,7 @@ TestTreeItem *QtTestParseResult::createTestTreeItem() const
     if (itemType == TestTreeItem::Root)
         return nullptr;
 
-    QtTestTreeItem *item = new QtTestTreeItem(base, displayName, fileName, itemType);
+    QtTestTreeItem *item = new QtTestTreeItem(framework, displayName, fileName, itemType);
     item->setProFile(proFile);
     item->setLine(line);
     item->setColumn(column);
@@ -148,7 +148,7 @@ static CPlusPlus::Document::Ptr declaringDocument(CPlusPlus::Document::Ptr doc,
         }
     }
 
-    for (const CPlusPlus::LookupItem &item : lookupItems) {
+    for (const CPlusPlus::LookupItem &item : qAsConst(lookupItems)) {
         if (CPlusPlus::Symbol *symbol = item.declaration()) {
             if (CPlusPlus::Class *toeClass = symbol->asClass()) {
                 const QString declFileName = QLatin1String(toeClass->fileId()->chars(),

@@ -839,7 +839,6 @@ static bool isBlacklistImport(const ImportKey &importKey, Model *model)
             || importKey.libraryQualifiedPath() == QStringLiteral("QtQuick.Dialogs")   //Unsupported
             || importKey.libraryQualifiedPath() == QStringLiteral("QtQuick.Controls.Styles")   //Unsupported
             || importKey.libraryQualifiedPath() == QStringLiteral("QtNfc") //Unsupported
-            || importKey.libraryQualifiedPath() == QStringLiteral("QtMultimedia")
             || importKey.libraryQualifiedPath() == QStringLiteral("Qt.WebSockets")
             || importKey.libraryQualifiedPath() == QStringLiteral("QtWebkit")
             || importKey.libraryQualifiedPath() == QStringLiteral("QtLocation")
@@ -1025,9 +1024,7 @@ bool TextToModelMerger::load(const QString &data, DifferenceHandler &differenceH
         collectLinkErrors(&errors, ctxt);
 
         setupImports(m_document, differenceHandler);
-
-        if (!justSanityCheck)
-            setupPossibleImports(snapshot, m_vContext);
+        setupPossibleImports(snapshot, m_vContext);
 
         qCInfo(rewriterBenchmark) << "imports setup:" << time.elapsed();
 

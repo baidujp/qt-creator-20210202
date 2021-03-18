@@ -48,8 +48,8 @@
     \list
         \li \uicontrol {3D Editor} (1) is the working area where you create the
             scene, position the model, light and camera, as well as move, rotate
-            and scale items. For more information, see
-            \l {Working in 3D Editor}.
+            and scale items. For more information on how to edit 3D scenes, see
+            \l {3D Editor}.
         \li \uicontrol {Form Editor} (2) is where you see the scene projected by
             the camera.
         \li \uicontrol {Library} (3) displays the building blocks that you
@@ -59,11 +59,11 @@
             Views}.
         \li \uicontrol {Navigator} (4) displays the items in the current QML
             file as a tree structure. For more information, see
-            \l {Managing Item Hierarchy}.
+            \l {Navigator}.
         \li \uicontrol {Properties} (5) organizes the properties of the
             selected item. You can change the properties also in \uicontrol
             {Text Editor}. For more information, see
-            \l {Specifying Item Properties}.
+            \l {Specifying Component Properties}.
         \li \uicontrol Connections (6) enables you to create connections
             between objects, signals, and object properties. For more
             information, see \l{Adding Connections}.
@@ -81,5 +81,5 @@
     \youtube w1yhDl93YI0
 
     For more information on other views, see
-    \l {Editing QML Files in Design Mode}.
+    \l {Design Views}.
 */

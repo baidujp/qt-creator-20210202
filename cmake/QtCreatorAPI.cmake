@@ -94,7 +94,7 @@ function(qtc_output_binary_dir varName)
 endfunction()
 
 function(add_qtc_library name)
-  cmake_parse_arguments(_arg "STATIC;OBJECT;SKIP_TRANSLATION;ALLOW_ASCII_CASTS;UNVERSIONED"
+  cmake_parse_arguments(_arg "STATIC;OBJECT;SKIP_TRANSLATION;ALLOW_ASCII_CASTS;UNVERSIONED;FEATURE_INFO"
     "DESTINATION;COMPONENT;SOURCES_PREFIX;BUILD_DEFAULT"
     "CONDITION;DEPENDS;PUBLIC_DEPENDS;DEFINES;PUBLIC_DEFINES;INCLUDES;PUBLIC_INCLUDES;SOURCES;EXPLICIT_MOC;SKIP_AUTOMOC;EXTRA_TRANSLATIONS;PROPERTIES" ${ARGN}
   )
@@ -110,6 +110,7 @@ function(add_qtc_library name)
 
   update_cached_list(__QTC_LIBRARIES "${name}")
 
+  condition_info(_extra_text _arg_CONDITION)
   if (NOT _arg_CONDITION)
     set(_arg_CONDITION ON)
   endif()
@@ -131,6 +132,9 @@ function(add_qtc_library name)
     set(_library_enabled OFF)
   endif()
 
+  if(DEFINED _arg_FEATURE_INFO)
+    add_feature_info("Library ${name}" _library_enabled "${_extra_text}")
+  endif()
   if (NOT _library_enabled)
     return()
   endif()
@@ -161,7 +165,14 @@ function(add_qtc_library name)
 
   add_library(${name} ${library_type} ${_arg_SOURCES})
   add_library(QtCreator::${name} ALIAS ${name})
+
   set_public_headers(${name} "${_arg_SOURCES}")
+  # transitional qmake plugin build support
+  string(TOLOWER "${name}" lowername)
+  set(dependencies_pri "${CMAKE_CURRENT_SOURCE_DIR}/${lowername}_dependencies.pri")
+  if(EXISTS ${dependencies_pri})
+    qtc_add_public_header(${dependencies_pri})
+  endif()
 
   # TODO remove, see above
   if (_arg_SOURCES_PREFIX)
@@ -212,10 +223,11 @@ function(add_qtc_library name)
   endif()
 
   qtc_output_binary_dir(_output_binary_dir)
+  string(REGEX MATCH "^[0-9]*" IDE_VERSION_MAJOR ${IDE_VERSION})
   set_target_properties(${name} PROPERTIES
     SOURCES_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
     VERSION "${IDE_VERSION}"
-    SOVERSION "${PROJECT_VERSION_MAJOR}"
+    SOVERSION "${IDE_VERSION_MAJOR}"
     MACHO_CURRENT_VERSION ${IDE_VERSION}
     MACHO_COMPATIBILITY_VERSION ${IDE_VERSION_COMPAT}
     CXX_EXTENSIONS OFF
@@ -233,7 +245,7 @@ function(add_qtc_library name)
   if (WIN32 AND library_type STREQUAL "SHARED" AND NOT _arg_UNVERSIONED)
     # Match qmake naming scheme e.g. Library4.dll
     set_target_properties(${name} PROPERTIES
-      SUFFIX "${PROJECT_VERSION_MAJOR}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      SUFFIX "${IDE_VERSION_MAJOR}${CMAKE_SHARED_LIBRARY_SUFFIX}"
       PREFIX ""
     )
   endif()
@@ -412,7 +424,14 @@ function(add_qtc_plugin target_name)
 
   add_library(${target_name} SHARED ${_arg_SOURCES})
   add_library(QtCreator::${target_name} ALIAS ${target_name})
+
   set_public_headers(${target_name} "${_arg_SOURCES}")
+  # transitional qmake plugin build support
+  string(TOLOWER "${target_name}" lowername)
+  set(dependencies_pri "${CMAKE_CURRENT_SOURCE_DIR}/${lowername}_dependencies.pri")
+  if(EXISTS ${dependencies_pri})
+    qtc_add_public_header(${dependencies_pri})
+  endif()
 
   ### Generate EXPORT_SYMBOL
   string(TOUPPER "${name}_LIBRARY" EXPORT_SYMBOL)
@@ -477,8 +496,9 @@ function(add_qtc_plugin target_name)
 
   if (WIN32)
     # Match qmake naming scheme e.g. Plugin4.dll
+    string(REGEX MATCH "^[0-9]*" IDE_VERSION_MAJOR ${IDE_VERSION})
     set_target_properties(${target_name} PROPERTIES
-      SUFFIX "${PROJECT_VERSION_MAJOR}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      SUFFIX "${IDE_VERSION_MAJOR}${CMAKE_SHARED_LIBRARY_SUFFIX}"
       PREFIX ""
     )
   endif()

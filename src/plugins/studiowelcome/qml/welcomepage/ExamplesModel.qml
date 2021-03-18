@@ -67,4 +67,20 @@ ListModel {
         thumbnail: "images/progressbar_demo.png"
         displayName: "Progress Bar"
     }
+
+    ListElement {
+        projectName: "washingMachineUI"
+        qmlFileName: "washingMachineUI.qml"
+        thumbnail: "images/washingmachinedemo_thumbnail.png"
+        displayName: "Washing Machine"
+    }
+
+    ListElement {
+        projectName: "highendivisystem"
+        qmlFileName: "Screen01.ui.qml"
+        thumbnail: "images/highendivi_thumbnail.png"
+        displayName: "Highend IVI System"
+        url: "https://download.qt.io/learning/examples/qtdesignstudio/highendivisystem.zip"
+        showDownload: true
+    }
 }

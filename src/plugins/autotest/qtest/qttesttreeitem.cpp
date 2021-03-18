@@ -34,9 +34,9 @@
 namespace Autotest {
 namespace Internal {
 
-QtTestTreeItem::QtTestTreeItem(ITestBase *testBase, const QString &name,
+QtTestTreeItem::QtTestTreeItem(ITestFramework *testFramework, const QString &name,
                                const QString &filePath, TestTreeItem::Type type)
-    : TestTreeItem(testBase, name, filePath, type)
+    : TestTreeItem(testFramework, name, filePath, type)
 {
     if (type == TestDataTag)
         setData(0, Qt::Checked, Qt::CheckStateRole);
@@ -310,7 +310,7 @@ TestTreeItem *QtTestTreeItem::find(const TestParseResult *result)
 
     switch (type()) {
     case Root:
-        if (result->base->asFramework()->grouping()) {
+        if (result->framework->grouping()) {
             const QString path = QFileInfo(result->fileName).absolutePath();
             for (int row = 0; row < childCount(); ++row) {
                 TestTreeItem *group = childItem(row);

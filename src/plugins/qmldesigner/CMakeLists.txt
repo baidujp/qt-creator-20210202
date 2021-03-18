@@ -6,7 +6,7 @@ endif()
 add_qtc_plugin(QmlDesigner
   DEPENDS
     QmlJS LanguageUtils QmlEditorWidgets AdvancedDockingSystem
-    Qt5::QuickWidgets Qt5::CorePrivate Sqlite
+    Qt5::QuickWidgets Qt5::CorePrivate Sqlite Threads::Threads
   DEFINES
     DESIGNER_CORE_LIBRARY
     IDE_LIBRARY_BASENAME=\"${IDE_LIBRARY_BASE_PATH}\"
@@ -30,6 +30,7 @@ add_qtc_plugin(QmlDesigner
     settingspage.cpp settingspage.h settingspage.ui
     shortcutmanager.cpp shortcutmanager.h
     designermcumanager.cpp designermcumanager.h
+    richtexteditordialog.cpp richtexteditordialog.h
   EXPLICIT_MOC
     components/propertyeditor/propertyeditorvalue.h
     components/connectioneditor/connectionviewwidget.h
@@ -213,6 +214,7 @@ extend_qtc_plugin(QmlDesigner
     selectioncontext.cpp selectioncontext.h
     theme.cpp theme.h
     zoomaction.cpp zoomaction.h
+    hdrimage.cpp hdrimage.h
 )
 
 extend_qtc_plugin(QmlDesigner
@@ -285,16 +287,6 @@ extend_qtc_plugin(QmlDesigner
 )
 
 extend_qtc_plugin(QmlDesigner
-  SOURCES_PREFIX components/importmanager
-  SOURCES
-    importlabel.cpp importlabel.h
-    importmanager.qrc
-    importmanagercombobox.cpp importmanagercombobox.h
-    importmanagerview.cpp importmanagerview.h
-    importswidget.cpp importswidget.h
-)
-
-extend_qtc_plugin(QmlDesigner
   SOURCES_PREFIX components/integration
   PUBLIC_INCLUDES components/integration
   SOURCES
@@ -309,28 +301,29 @@ extend_qtc_plugin(QmlDesigner
 extend_qtc_plugin(QmlDesigner
   SOURCES_PREFIX components/itemlibrary
   SOURCES
+    assetimportupdatedialog.cpp assetimportupdatedialog.h
+    assetimportupdatedialog.ui
+    assetimportupdatetreeitem.cpp assetimportupdatetreeitem.h
+    assetimportupdatetreeitemdelegate.cpp assetimportupdatetreeitemdelegate.h
+    assetimportupdatetreemodel.cpp assetimportupdatetreemodel.h
+    assetimportupdatetreeview.cpp assetimportupdatetreeview.h
     customfilesystemmodel.cpp customfilesystemmodel.h
     itemlibrary.qrc
     itemlibraryimageprovider.cpp itemlibraryimageprovider.h
     itemlibraryitem.cpp itemlibraryitem.h
     itemlibrarymodel.cpp itemlibrarymodel.h
     itemlibraryresourceview.cpp itemlibraryresourceview.h
-    itemlibrarysection.cpp itemlibrarysection.h
-    itemlibrarysectionmodel.cpp itemlibrarysectionmodel.h
+    itemlibrarycategory.cpp itemlibrarycategory.h
+    itemlibraryitemsmodel.cpp itemlibraryitemsmodel.h
     itemlibraryview.cpp itemlibraryview.h
     itemlibrarywidget.cpp itemlibrarywidget.h
     itemlibraryassetimportdialog.cpp itemlibraryassetimportdialog.h
     itemlibraryassetimportdialog.ui
     itemlibraryassetimporter.cpp itemlibraryassetimporter.h
     itemlibraryiconimageprovider.cpp itemlibraryiconimageprovider.h
-)
-
-find_package(Qt5 COMPONENTS Quick3DAssetImport QUIET)
-extend_qtc_plugin(QmlDesigner
-  CONDITION TARGET Qt5::Quick3DAssetImport
-  FEATURE_INFO "Qt Quick 3D asset import"
-  DEPENDS Qt5::Quick3DAssetImportPrivate
-  DEFINES IMPORT_QUICK3D_ASSETS
+    itemlibraryimport.cpp itemlibraryimport.h
+    itemlibrarycategoriesmodel.cpp itemlibrarycategoriesmodel.h
+    itemlibraryaddimportmodel.cpp itemlibraryaddimportmodel.h
 )
 
 extend_qtc_plugin(QmlDesigner

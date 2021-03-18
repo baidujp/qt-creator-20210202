@@ -5,8 +5,6 @@ import qbs.Utilities
 Project {
     name: "Core"
 
-    QtcDevHeaders { }
-
     QtcPlugin {
         Depends {
             name: "Qt"
@@ -309,6 +307,7 @@ Project {
                 "optionspopup.cpp",
                 "optionspopup.h",
                 "searchresultcolor.h",
+                "searchresultitem.h",
                 "searchresulttreeitemdelegate.cpp",
                 "searchresulttreeitemdelegate.h",
                 "searchresulttreeitemroles.h",

@@ -32,18 +32,33 @@ import StudioTheme 1.0 as StudioTheme
 Item {
     id: section
     property alias caption: label.text
+    property alias sectionHeight: header.height
+    property alias sectionBackgroundColor: header.color
+    property alias sectionFontSize: label.font.pixelSize
+    property alias showTopSeparator: topSeparator.visible
+    property alias showArrow: arrow.visible
+
     property int leftPadding: 8
     property int topPadding: 4
     property int rightPadding: 0
     property int bottomPadding: 4
 
-    property int animationDuration: 0
-
     property bool expanded: true
     property int level: 0
     property int levelShift: 10
+    property bool hideHeader: false
+    property bool expandOnClick: true // if false, toggleExpand signal will be emitted instead
+
+    onHideHeaderChanged:
+    {
+        header.visible = !hideHeader
+        header.height = hideHeader ? 0 : 20
+    }
 
     clip: true
+
+    signal showContextMenu()
+    signal toggleExpand()
 
     Rectangle {
         id: header
@@ -60,12 +75,6 @@ Item {
             anchors.left: parent.left
             anchors.leftMargin: 4 + (level * levelShift)
             anchors.verticalCenter: parent.verticalCenter
-            Behavior on rotation {
-                NumberAnimation {
-                    easing.type: Easing.OutCubic
-                    duration: section.animationDuration
-                }
-            }
         }
 
         Controls.Label {
@@ -80,11 +89,30 @@ Item {
         MouseArea {
             id: mouseArea
             anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             onClicked: {
-                section.animationDuration = 120
-                section.expanded = !section.expanded
+                if (mouse.button === Qt.LeftButton) {
+                    trans.enabled = true
+                    if (expandOnClick)
+                        expanded = !expanded
+                    else
+                        section.toggleExpand()
+                } else {
+                    section.showContextMenu()
+                }
             }
         }
+    }
+
+    Rectangle {
+        id: topSeparator
+        height: 1
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: 5 + leftPadding
+        anchors.leftMargin: 5 - leftPadding
+        visible: false
+        color: "#666666"
     }
 
     default property alias __content: row.children
@@ -104,13 +132,6 @@ Item {
         anchors.topMargin: section.topPadding
     }
 
-    Behavior on implicitHeight {
-        NumberAnimation {
-            easing.type: Easing.OutCubic
-            duration: section.animationDuration
-        }
-    }
-
     states: [
         State {
             name: "Collapsed"
@@ -125,4 +146,14 @@ Item {
             }
         }
     ]
+
+    transitions: Transition {
+            id: trans
+            enabled: false
+            NumberAnimation {
+                properties: "implicitHeight,rotation";
+                duration: 120;
+                easing.type: Easing.OutCubic
+            }
+        }
 }

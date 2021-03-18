@@ -40,7 +40,7 @@ BookmarkFilter::BookmarkFilter(BookmarkManager *manager)
     setId("Bookmarks");
     setDisplayName(tr("Bookmarks"));
     setPriority(Medium);
-    setShortcutString("b");
+    setDefaultShortcutString("b");
 }
 
 void BookmarkFilter::prepareSearch(const QString &entry)
@@ -132,9 +132,4 @@ void BookmarkFilter::accept(LocatorFilterEntry selection, QString *newText,
                 selection.internalData.toModelIndex())) {
         m_manager->gotoBookmark(bookmark);
     }
-}
-
-void BookmarkFilter::refresh(QFutureInterface<void> &future)
-{
-    Q_UNUSED(future)
 }

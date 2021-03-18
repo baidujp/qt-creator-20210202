@@ -54,7 +54,7 @@ MenuBarFilter::MenuBarFilter()
 {
     setId("Actions from the menu");
     setDisplayName(tr("Actions from the Menu"));
-    setShortcutString("t");
+    setDefaultShortcutString("t");
     connect(ICore::instance(), &ICore::contextAboutToChange, this, [this] {
         if (LocatorManager::locatorHasFocus())
             updateEnabledActionCache();
@@ -88,11 +88,6 @@ void MenuBarFilter::accept(LocatorFilterEntry selection, QString *newText,
                 action->trigger();
         }, Qt::QueuedConnection);
     }
-}
-
-void MenuBarFilter::refresh(QFutureInterface<void> &future)
-{
-    Q_UNUSED(future)
 }
 
 QList<LocatorFilterEntry> MenuBarFilter::matchesForAction(QAction *action,

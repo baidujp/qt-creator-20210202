@@ -27,6 +27,7 @@
 
 #include <synchronousimagecache.h>
 #include <theme.h>
+#include <hdrimage.h>
 
 #include <utils/filesystemwatcher.h>
 
@@ -38,7 +39,6 @@
 #include <QImageReader>
 #include <QPainter>
 #include <QRawFont>
-#include <QPair>
 #include <qmath.h>
 #include <condition_variable>
 #include <mutex>
@@ -94,6 +94,11 @@ static QPixmap defaultPixmapForType(const QString &type, const QSize &size)
     return QPixmap(QStringLiteral(":/ItemLibrary/images/asset_%1_%2.png").arg(type).arg(size.width()));
 }
 
+static QPixmap texturePixmap(const QString &fileName)
+{
+    return HdrImage{fileName}.toPixmap();
+}
+
 QString fontFamily(const QFileInfo &info)
 {
     QRawFont font(info.absoluteFilePath(), 10);
@@ -105,36 +110,44 @@ QString fontFamily(const QFileInfo &info)
 class ItemLibraryFileIconProvider : public QFileIconProvider
 {
 public:
-    ItemLibraryFileIconProvider(SynchronousImageCache &fontImageCache)
+    ItemLibraryFileIconProvider(SynchronousImageCache &fontImageCache,
+                                QHash<QString, QPair<QDateTime, QIcon>> &iconCache)
         : QFileIconProvider()
         , m_fontImageCache(fontImageCache)
+        , m_iconCache(iconCache)
     {
     }
 
     QIcon icon( const QFileInfo & info ) const override
     {
-        QIcon icon;
-        const QString suffix = info.suffix();
         const QString filePath = info.absoluteFilePath();
+        QPair<QDateTime, QIcon> &cachedIcon = m_iconCache[filePath];
+        if (!cachedIcon.second.isNull() && cachedIcon.first == info.lastModified())
+            return cachedIcon.second;
+
+        QIcon icon;
+        const QString suffix = info.suffix().toLower();
+
+        // Provide icon depending on suffix
+        QPixmap origPixmap;
 
         if (supportedFontSuffixes().contains(suffix))
             return generateFontIcons(filePath);
+        else if (supportedImageSuffixes().contains(suffix))
+            origPixmap.load(filePath);
+        else if (supportedTexture3DSuffixes().contains(suffix))
+            origPixmap = texturePixmap(filePath);
 
         for (auto iconSize : iconSizes) {
-            // Provide icon depending on suffix
-            QPixmap pixmap;
-
-            if (supportedImageSuffixes().contains(suffix))
-                pixmap.load(filePath);
-            else if (supportedAudioSuffixes().contains(suffix))
-                pixmap = defaultPixmapForType("sound", iconSize);
-            else if (supportedShaderSuffixes().contains(suffix))
-                pixmap = defaultPixmapForType("shader", iconSize);
-            else if (supportedTexture3DSuffixes().contains(suffix))
-                pixmap = defaultPixmapForType("texture", iconSize);
-
-            if (pixmap.isNull())
-                return QFileIconProvider::icon(info);
+            QPixmap pixmap = origPixmap;
+            if (pixmap.isNull()) {
+                if (supportedAudioSuffixes().contains(suffix))
+                    pixmap = defaultPixmapForType("sound", iconSize);
+                else if (supportedShaderSuffixes().contains(suffix))
+                    pixmap = defaultPixmapForType("shader", iconSize);
+                if (pixmap.isNull())
+                    return QFileIconProvider::icon(info);
+            }
 
             if ((pixmap.width() > iconSize.width()) || (pixmap.height() > iconSize.height()))
                 pixmap = pixmap.scaled(iconSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -142,6 +155,8 @@ public:
             icon.addPixmap(pixmap);
         }
 
+        cachedIcon.first = info.lastModified();
+        cachedIcon.second = icon;
         return icon;
     }
 
@@ -155,6 +170,7 @@ public:
                                                         "Abc"});
     }
 
+private:
     // Generated icon sizes should contain all ItemLibraryResourceView needed icon sizes, and their
     // x2 versions for HDPI sceens
     std::vector<QSize> iconSizes = {{384, 384},
@@ -167,17 +183,28 @@ public:
                                     {32, 32}}; // List
 
     SynchronousImageCache &m_fontImageCache;
+    QHash<QString, QPair<QDateTime, QIcon>> &m_iconCache;
 };
 
 CustomFileSystemModel::CustomFileSystemModel(SynchronousImageCache &fontImageCache, QObject *parent)
     : QAbstractListModel(parent)
     , m_fileSystemModel(new QFileSystemModel(this))
     , m_fileSystemWatcher(new Utils::FileSystemWatcher(this))
+    , m_fontImageCache(fontImageCache)
 {
-    m_fileSystemModel->setIconProvider(new ItemLibraryFileIconProvider(fontImageCache));
-
-    connect(m_fileSystemWatcher, &Utils::FileSystemWatcher::directoryChanged, [this] {
+    m_updatePathTimer.setInterval(200);
+    m_updatePathTimer.setSingleShot(true);
+    m_updatePathTimer.callOnTimeout([this]() {
         updatePath(m_fileSystemModel->rootPath());
+    });
+
+    // If project directory contents change, or one of the asset files is modified, we must
+    // reconstruct the model to update the icons
+    connect(m_fileSystemWatcher, &Utils::FileSystemWatcher::directoryChanged, [this] {
+        m_updatePathTimer.start();
+    });
+    connect(m_fileSystemWatcher, &Utils::FileSystemWatcher::fileChanged, [this] {
+        m_updatePathTimer.start();
     });
 }
 
@@ -280,7 +307,7 @@ void CustomFileSystemModel::setSearchFilter(const QString &nameFilterList)
 QPair<QString, QByteArray> CustomFileSystemModel::resourceTypeAndData(const QModelIndex &index) const
 {
     QFileInfo fi = fileInfo(index);
-    QString suffix = fi.suffix();
+    QString suffix = fi.suffix().toLower();
     if (!suffix.isEmpty()) {
         if (supportedImageSuffixes().contains(suffix)) {
             // Data: Image format (suffix)
@@ -343,9 +370,17 @@ void CustomFileSystemModel::appendIfNotFiltered(const QString &file)
 QModelIndex CustomFileSystemModel::updatePath(const QString &newPath)
 {
     beginResetModel();
+
+    // We must recreate icon provider to ensure modified icons are recreated
+    auto newProvider = new ItemLibraryFileIconProvider(m_fontImageCache, m_iconCache);
+    m_fileSystemModel->setIconProvider(newProvider);
+    delete m_fileIconProvider;
+    m_fileIconProvider = newProvider;
+
     m_fileSystemModel->setRootPath(newPath);
 
     m_fileSystemWatcher->removeDirectories(m_fileSystemWatcher->directories());
+    m_fileSystemWatcher->removeFiles(m_fileSystemWatcher->files());
 
     m_fileSystemWatcher->addDirectory(newPath, Utils::FileSystemWatcher::WatchAllChanges);
 
@@ -357,16 +392,17 @@ QModelIndex CustomFileSystemModel::updatePath(const QString &newPath)
         nameFilterList.append(QString(QStringLiteral("*%1*")).arg(searchFilter));
     } else {
         const QString filterTemplate("*%1*.%2");
-        for (const QString &ext : supportedImageSuffixes())
-            nameFilterList.append(filterTemplate.arg(searchFilter, ext));
-        for (const QString &ext : supportedShaderSuffixes())
-            nameFilterList.append(filterTemplate.arg(searchFilter, ext));
-        for (const QString &ext : supportedFontSuffixes())
-            nameFilterList.append(filterTemplate.arg(searchFilter, ext));
-        for (const QString &ext : supportedAudioSuffixes())
-            nameFilterList.append(filterTemplate.arg(searchFilter, ext));
-        for (const QString &ext : supportedTexture3DSuffixes())
-            nameFilterList.append(filterTemplate.arg(searchFilter, ext));
+        auto appendFilters = [&](const QStringList &suffixes) {
+            for (const QString &ext : suffixes) {
+                nameFilterList.append(filterTemplate.arg(searchFilter, ext));
+                nameFilterList.append(filterTemplate.arg(searchFilter, ext.toUpper()));
+            }
+        };
+        appendFilters(supportedImageSuffixes());
+        appendFilters(supportedShaderSuffixes());
+        appendFilters(supportedFontSuffixes());
+        appendFilters(supportedAudioSuffixes());
+        appendFilters(supportedTexture3DSuffixes());
     }
 
     m_files.clear();
@@ -376,11 +412,19 @@ QModelIndex CustomFileSystemModel::updatePath(const QString &newPath)
     while (fileIterator.hasNext())
         appendIfNotFiltered(fileIterator.next());
 
-    QDirIterator dirIterator(newPath, {}, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-    while (dirIterator.hasNext())
-        m_fileSystemWatcher->addDirectory(dirIterator.next(), Utils::FileSystemWatcher::WatchAllChanges);
+    QDirIterator dirIterator(newPath, {}, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                             QDirIterator::Subdirectories);
+    while (dirIterator.hasNext()) {
+        const QString entry = dirIterator.next();
+        QFileInfo fi{entry};
+        if (fi.isDir())
+            m_fileSystemWatcher->addDirectory(entry, Utils::FileSystemWatcher::WatchAllChanges);
+        else if (supportedSuffixes().contains(fi.suffix()))
+            m_fileSystemWatcher->addFile(entry, Utils::FileSystemWatcher::WatchAllChanges);
+    }
 
     endResetModel();
+
     return QAbstractListModel::index(0, 0);
 }
 

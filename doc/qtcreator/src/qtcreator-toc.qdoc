@@ -90,23 +90,33 @@
             \li \l{Developing Qt Quick Applications}
             \list
                 \li \l {Creating Qt Quick Projects}
-                \li \l {Editing QML Files in Design Mode}
-
+                \li \l {Design Views}
+                    \list
+                        \li \l{Form Editor}
+                        \li \l{3D Editor}
+                        \li \l{Library}
+                        \li \l{Navigator}
+                        \li \l{Properties}
+                        \li \l{Connection View}
+                        \li \l{States}
+                        \li \l{Transition Editor}
+                        \li \l{Timeline}
+                        \li \l{Curve Editor}
+                    \endlist
                 \li \l {Creating UIs}
                     \list
                         \li \l {Creating Components}
                         \list
-                            \li \l{Editing 2D Content}
                             \li \l{Shapes}
                             \li \l{Text}
                             \li \l{Images}
                             \li \l{User Interaction Methods}
                             \li \l{Lists and Other Data Models}
+                            \li \l{Animations}
                             \li \l{Creating Buttons}
                             \li \l{Creating Scalable Buttons and Borders}
                         \endlist
-                        \li \l{Managing Item Hierarchy}
-                        \li \l{Specifying Item Properties}
+                        \li \l{Specifying Component Properties}
                         \li \l{Positioning Items}
                         \li \l{Using Custom Fonts}
                         \li \l{Annotating Designs}
@@ -116,11 +126,14 @@
                 \li \l {Adding Dynamics}
                     \list
                         \li \l{Creating Animations}
+                            \list
+                                \li \l{Editing Easing Curves}
+                            \endlist
                         \li \l{Adding Connections}
                         \list
-                            \li \l{Connecting Objects to Signals}
-                            \li \l{Specifying Dynamic Properties}
+                            \li \l{Connecting Components to Signals}
                             \li \l{Adding Bindings Between Properties}
+                            \li \l{Specifying Dynamic Properties}
                             \li \l{Managing C++ Backend Objects}
                         \endlist
                         \li \l {Adding States}
@@ -134,7 +147,6 @@
                                 \endlist
                             \li \l{Importing 3D Assets}
                             \li \l{Editing 3D Assets in Design Mode}
-                            \li \l{Working in 3D Editor}
                             \li \l{Adding 3D Views}
                             \li \l{Using 3D Components}
                             \list

@@ -213,11 +213,11 @@ QList<ITestConfiguration *> TestTreeModel::getTestsForFile(const Utils::FilePath
     return result;
 }
 
-QList<TestTreeItem *> TestTreeModel::testItemsByName(TestTreeItem *root, const QString &testName)
+static QList<ITestTreeItem *> testItemsByName(TestTreeItem *root, const QString &testName)
 {
-    QList<TestTreeItem *> result;
+    QList<ITestTreeItem *> result;
 
-    root->forFirstLevelChildItems([&testName, &result, this](TestTreeItem *node) {
+    root->forFirstLevelChildItems([&testName, &result](TestTreeItem *node) {
         if (node->type() == TestTreeItem::TestSuite || node->type() == TestTreeItem::TestCase) {
             if (node->name() == testName) {
                 result << node;
@@ -295,11 +295,11 @@ const QList<ITestTreeItem *> TestTreeModel::testToolRootNodes() const
     return result;
 }
 
-QList<TestTreeItem *> TestTreeModel::testItemsByName(const QString &testName)
+QList<ITestTreeItem *> TestTreeModel::testItemsByName(const QString &testName)
 {
-    QList<TestTreeItem *> result;
+    QList<ITestTreeItem *> result;
     for (TestTreeItem *frameworkRoot : frameworkRootNodes())
-        result << testItemsByName(frameworkRoot, testName);
+        result << Autotest::testItemsByName(frameworkRoot, testName);
 
     return result;
 }
@@ -321,9 +321,10 @@ void TestTreeModel::synchronizeTestFrameworks()
         });
     }
 
+    const auto sortedParsers = Utils::transform(sorted, &ITestFramework::testParser);
     // pre-check to avoid further processing when frameworks are unchanged
     Utils::TreeItem *invisibleRoot = rootItem();
-    QSet<ITestFramework *> newlyAdded;
+    QSet<ITestParser *> newlyAdded;
     QList<ITestTreeItem *> oldFrameworkRoots;
     for (Utils::TreeItem *oldFrameworkRoot : *invisibleRoot)
         oldFrameworkRoots.append(static_cast<ITestTreeItem *>(oldFrameworkRoot));
@@ -331,11 +332,11 @@ void TestTreeModel::synchronizeTestFrameworks()
     for (ITestTreeItem *oldFrameworkRoot : oldFrameworkRoots)
         takeItem(oldFrameworkRoot);  // do NOT delete the ptr is still held by TestFrameworkManager
 
-    for (ITestFramework *framework : qAsConst(sorted)) {
-        TestTreeItem *frameworkRootNode = framework->rootNode();
+    for (ITestParser *parser : sortedParsers) {
+        TestTreeItem *frameworkRootNode = parser->framework()->rootNode();
         invisibleRoot->appendChild(frameworkRootNode);
         if (!oldFrameworkRoots.removeOne(frameworkRootNode))
-            newlyAdded.insert(framework);
+            newlyAdded.insert(parser);
     }
     for (ITestTreeItem *oldFrameworkRoot : oldFrameworkRoots) {
         if (oldFrameworkRoot->testBase()->type() == ITestBase::Framework)
@@ -344,7 +345,7 @@ void TestTreeModel::synchronizeTestFrameworks()
             invisibleRoot->appendChild(oldFrameworkRoot);
     }
 
-    m_parser->syncTestFrameworks(sorted);
+    m_parser->syncTestFrameworks(sortedParsers);
     if (!newlyAdded.isEmpty())
         m_parser->updateTestTree(newlyAdded);
     emit updatedActiveFrameworks(invisibleRoot->childCount());
@@ -372,15 +373,15 @@ void TestTreeModel::synchronizeTestTools()
     QSet<ITestTool *> newlyAdded;
     QList<ITestTreeItem *> oldFrameworkRoots;
     for (Utils::TreeItem *oldFrameworkRoot : *invisibleRoot) {
-        auto item = static_cast<TestTreeItem *>(oldFrameworkRoot);
-        if (item->testBase()->asTestTool())
+        auto item = static_cast<ITestTreeItem *>(oldFrameworkRoot);
+        if (item->testBase()->type() == ITestBase::Tool)
             oldFrameworkRoots.append(item);
     }
 
     for (ITestTreeItem *oldFrameworkRoot : oldFrameworkRoots)
         takeItem(oldFrameworkRoot);  // do NOT delete the ptr is still held by TestFrameworkManager
 
-    for (ITestTool *testTool : tools) {
+    for (ITestTool *testTool : qAsConst(tools)) {
         ITestTreeItem *testToolRootNode = testTool->rootNode();
         if (testTool->active()) {
             invisibleRoot->appendChild(testToolRootNode);
@@ -668,7 +669,7 @@ void TestTreeModel::revalidateCheckState(ITestTreeItem *item)
 
 void TestTreeModel::onParseResultReady(const TestParseResultPtr result)
 {
-    ITestFramework *framework = result->base->asFramework();
+    ITestFramework *framework = result->framework;
     QTC_ASSERT(framework, return);
     TestTreeItem *rootNode = framework->rootNode();
     QTC_ASSERT(rootNode, return);
@@ -692,7 +693,7 @@ void Autotest::TestTreeModel::onDataChanged(const QModelIndex &topLeft,
 
 void TestTreeModel::handleParseResult(const TestParseResult *result, TestTreeItem *parentNode)
 {
-    const bool groupingEnabled = result->base->asFramework()->grouping();
+    const bool groupingEnabled = result->framework->grouping();
     // lookup existing items
     if (TestTreeItem *toBeModified = parentNode->find(result)) {
         // found existing item... Do not remove
@@ -783,7 +784,7 @@ int TestTreeModel::autoTestsCount() const
     return rootNode ? rootNode->childCount() : 0;
 }
 
-bool TestTreeModel::hasUnnamedQuickTests(const TestTreeItem *rootNode) const
+bool TestTreeModel::hasUnnamedQuickTests(const ITestTreeItem* rootNode) const
 {
     for (int row = 0, count = rootNode->childCount(); row < count; ++row) {
         if (rootNode->childAt(row)->name().isEmpty())
@@ -792,7 +793,7 @@ bool TestTreeModel::hasUnnamedQuickTests(const TestTreeItem *rootNode) const
     return false;
 }
 
-TestTreeItem *TestTreeModel::unnamedQuickTests() const
+ITestTreeItem *TestTreeModel::unnamedQuickTests() const
 {
     TestTreeItem *rootNode = quickRootNode();
     if (!rootNode)
@@ -811,7 +812,7 @@ int TestTreeModel::namedQuickTestsCount() const
 
 int TestTreeModel::unnamedQuickTestsCount() const
 {
-    if (TestTreeItem *unnamed = unnamedQuickTests())
+    if (ITestTreeItem *unnamed = unnamedQuickTests())
         return unnamed->childCount();
     return 0;
 }
@@ -877,7 +878,7 @@ TestTreeSortFilterModel::TestTreeSortFilterModel(TestTreeModel *sourceModel, QOb
     setSourceModel(sourceModel);
 }
 
-void TestTreeSortFilterModel::setSortMode(TestTreeItem::SortMode sortMode)
+void TestTreeSortFilterModel::setSortMode(ITestTreeItem::SortMode sortMode)
 {
     m_sortMode = sortMode;
     invalidate();

@@ -66,7 +66,7 @@ void HoverHandler::identifyMatch(TextEditor::TextEditorWidget *editorWidget,
     auto uri = DocumentUri::fromFilePath(editorWidget->textDocument()->filePath());
     QTextCursor tc = editorWidget->textCursor();
     tc.setPosition(pos);
-    QList<Diagnostic> diagnostics = m_client->diagnosticsAt(uri, Range(Position(tc), Position(tc)));
+    const QList<Diagnostic> &diagnostics = m_client->diagnosticsAt(uri, tc);
     if (!diagnostics.isEmpty()) {
         const QStringList messages = Utils::transform(diagnostics, &Diagnostic::message);
         setToolTip(messages.join('\n'));
@@ -74,7 +74,11 @@ void HoverHandler::identifyMatch(TextEditor::TextEditorWidget *editorWidget,
         return;
     }
 
-    bool sendMessage = m_client->capabilities().hoverProvider().value_or(false);
+    const Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>> &provider
+        = m_client->capabilities().hoverProvider();
+    bool sendMessage = provider.has_value();
+    if (sendMessage && Utils::holds_alternative<bool>(*provider))
+        sendMessage = Utils::get<bool>(*provider);
     if (Utils::optional<bool> registered = m_client->dynamicCapabilities().isRegistered(
             HoverRequest::methodName)) {
         sendMessage = registered.value();

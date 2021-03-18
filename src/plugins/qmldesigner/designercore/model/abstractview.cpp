@@ -329,6 +329,8 @@ void AbstractView::variantPropertiesChanged(const QList<VariantProperty>& /*prop
 {
 }
 
+void AbstractView::bindingPropertiesAboutToBeChanged(const QList<BindingProperty> &) {}
+
 void AbstractView::bindingPropertiesChanged(const QList<BindingProperty>& /*propertyList*/, PropertyChangeFlags /*propertyChange*/)
 {
 }
@@ -383,6 +385,10 @@ void AbstractView::renderImage3DChanged(const QImage & /*image*/)
 }
 
 void AbstractView::updateActiveScene3D(const QVariantMap & /*sceneState*/)
+{
+}
+
+void AbstractView::updateImport3DSupport(const QVariantMap & /*supportMap*/)
 {
 }
 
@@ -802,6 +808,12 @@ void AbstractView::emitModelNodelPreviewPixmapChanged(const ModelNode &node, con
 {
     if (model())
         model()->d->notifyModelNodePreviewPixmapChanged(node, pixmap);
+}
+
+void AbstractView::emitImport3DSupportChanged(const QVariantMap &supportMap)
+{
+    if (model())
+        model()->d->notifyImport3DSupportChanged(supportMap);
 }
 
 void AbstractView::emitRewriterEndTransaction()
